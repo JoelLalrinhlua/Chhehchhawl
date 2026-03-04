@@ -1,3 +1,10 @@
+/**
+ * themed-text.tsx — Theme-aware Text component (Expo template).
+ *
+ * Resolves its text colour from the current color scheme. Supports
+ * type variants: default, title, defaultSemiBold, subtitle, link.
+ */
+
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
 import { useThemeColor } from '@/hooks/use-theme-color';

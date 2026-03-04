@@ -3,5 +3,31 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "/^node scripts/test-supabase\\.js$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e \"console\\.log\\('Checking profiles table constraints via SQL would be next; skipping heavy introspection\\.'\\)\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^npx expo install @tanstack/react-query$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^Get-Content \"node_modules\\\\@tanstack\\\\react-query\\\\package\\.json\" \\| ConvertFrom-Json \\| Select-Object -Property version, main, module, types \\| Format-List$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^\\(Get-Content \"node_modules\\\\@tanstack\\\\react-query\\\\package\\.json\" -Raw \\| ConvertFrom-Json\\)\\.exports\\.'\\.' \\| ConvertTo-Json$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^npx expo customize metro\\.config\\.js 2>&1$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

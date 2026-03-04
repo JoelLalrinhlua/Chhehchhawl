@@ -1,3 +1,10 @@
+/**
+ * themed-view.tsx — Theme-aware View component (Expo template).
+ *
+ * Resolves its background colour from the current color scheme.
+ * Accepts optional `lightColor` / `darkColor` overrides.
+ */
+
 import { View, type ViewProps } from 'react-native';
 
 import { useThemeColor } from '@/hooks/use-theme-color';

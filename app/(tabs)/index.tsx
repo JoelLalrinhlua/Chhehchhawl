@@ -1,98 +1,261 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+/**
+ * (tabs)/index.tsx — Home / Dashboard screen.
+ *
+ * Displays a welcome greeting with the user’s first name and a set of
+ * action cards (DashboardCard) for quick navigation: post a task, browse
+ * tasks, view history, edit profile.
+ */
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import React from 'react';
+import {
+    Dimensions,
+    Image,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import Animated, {
+    FadeInDown,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+} from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+const DashboardCard = ({
+    title,
+    subtitle,
+    icon,
+    onPress,
+    delay = 0,
+}: {
+    title: string;
+    subtitle: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    onPress: () => void;
+    delay?: number;
+}) => {
+    const { colors } = useTheme();
+    const scale = useSharedValue(1);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }],
+    }));
+
+    return (
+        <Animated.View entering={FadeInDown.delay(delay).duration(600)}>
+            <Animated.View style={animatedStyle}>
+                <TouchableOpacity
+                    style={[styles.card, { backgroundColor: colors.card }]}
+                    onPress={onPress}
+                    onPressIn={() => {
+                        scale.value = withSpring(0.98, { damping: 15 });
+                    }}
+                    onPressOut={() => {
+                        scale.value = withSpring(1, { damping: 15 });
+                    }}
+                    activeOpacity={0.9}
+                >
+                    <View style={[styles.iconBox, { backgroundColor: colors.surface }]}>
+                        <Ionicons name={icon} size={28} color={colors.text} />
+                    </View>
+                    <View style={styles.cardContent}>
+                        <Text style={[styles.cardTitle, { color: colors.text }]}>{title}</Text>
+                        <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+                    </View>
+                </TouchableOpacity>
+            </Animated.View>
+        </Animated.View>
+    );
+};
+
+export default function DashboardScreen() {
+    const { user, profile } = useAuth();
+    const { colors } = useTheme();
+
+    const firstName = profile?.full_name?.split(' ')[0] || 'User';
+
+    return (
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* Header */}
+            <View style={styles.header}>
+                <View style={styles.profileSection}>
+                    <View style={[styles.avatar, { backgroundColor: colors.surface }]}>
+                        {profile?.avatar_url ? (
+                            <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+                        ) : (
+                            <Text style={[styles.avatarText, { color: colors.accent }]}>
+                                {firstName[0]}
+                            </Text>
+                        )}
+                    </View>
+                </View>
+                <View style={styles.headerRight}>
+                    <TouchableOpacity style={styles.iconButton}>
+                        <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                        <View style={[styles.badge, { backgroundColor: colors.accent }]} />
+                    </TouchableOpacity>
+                    <Image
+                        source={require('@/assets/images/LOGO Chhehchhawl.png')}
+                        style={styles.logo}
+                        resizeMode="contain"
+                    />
+                </View>
+            </View>
+
+            <View style={styles.content}>
+                {/* Welcome Section */}
+                <Animated.View entering={FadeInDown.duration(600)} style={styles.welcomeSection}>
+                    <Text style={[styles.welcomeText, { color: colors.text }]}>Welcome back,</Text>
+                    <Text style={[styles.nameText, { color: colors.accent }]}>{firstName}</Text>
+                    <Text style={[styles.taglineText, { color: colors.textMuted }]}>
+                        Ready to make a difference today?
+                    </Text>
+                </Animated.View>
+
+                {/* Action Cards */}
+                <View style={styles.cardsContainer}>
+                    <DashboardCard
+                        title="Find Task"
+                        subtitle="Browse available tasks near you"
+                        icon="list"
+                        onPress={() => router.push('/(tabs)/tasks')}
+                        delay={100}
+                    />
+                    <DashboardCard
+                        title="Post Task"
+                        subtitle="Create a new task for helpers"
+                        icon="add"
+                        onPress={() => router.push('/create-task')}
+                        delay={200}
+                    />
+                    <DashboardCard
+                        title="Chat"
+                        subtitle="Message your task contacts"
+                        icon="chatbubble-ellipses-outline"
+                        onPress={() => router.push('/(tabs)/chat')}
+                        delay={300}
+                    />
+                </View>
+            </View>
+        </SafeAreaView>
+    );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+    container: {
+        flex: 1,
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: Spacing.xl,
+        paddingTop: Spacing.md,
+        marginBottom: Spacing.xl,
+    },
+    profileSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    avatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+    },
+    avatarText: {
+        fontSize: FontSize.lg,
+        fontFamily: FontFamily.bold,
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+    },
+    iconButton: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    badge: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        borderWidth: 1.5,
+        borderColor: 'transparent',
+    },
+    logo: {
+        width: 32,
+        height: 32,
+    },
+    content: {
+        flex: 1,
+        paddingHorizontal: Spacing.xl,
+    },
+    welcomeSection: {
+        marginBottom: Spacing.xl + Spacing.md,
+    },
+    welcomeText: {
+        fontSize: FontSize.xl,
+        fontFamily: FontFamily.regular,
+        marginBottom: 4,
+    },
+    nameText: {
+        fontSize: FontSize.hg,
+        fontFamily: FontFamily.bold,
+        marginBottom: Spacing.sm,
+    },
+    taglineText: {
+        fontSize: FontSize.md,
+        fontFamily: FontFamily.regular,
+    },
+    cardsContainer: {
+        gap: Spacing.lg,
+    },
+    card: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: Spacing.lg,
+        borderRadius: BorderRadius.xl,
+        gap: Spacing.lg,
+    },
+    iconBox: {
+        width: 56,
+        height: 56,
+        borderRadius: BorderRadius.lg,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cardContent: {
+        flex: 1,
+    },
+    cardTitle: {
+        fontSize: FontSize.xl,
+        fontFamily: FontFamily.bold,
+        marginBottom: 4,
+    },
+    cardSubtitle: {
+        fontSize: FontSize.sm,
+        fontFamily: FontFamily.regular,
+        lineHeight: 20,
+    },
 });

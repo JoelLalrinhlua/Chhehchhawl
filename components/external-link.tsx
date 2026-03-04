@@ -1,3 +1,10 @@
+/**
+ * external-link.tsx — Anchor component that opens URLs in an in-app browser.
+ *
+ * On native platforms, tapping the link opens `expo-web-browser` instead of
+ * the system browser. On web, it behaves as a standard `<a target="_blank">`.
+ */
+
 import { Href, Link } from 'expo-router';
 import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 import { type ComponentProps } from 'react';
