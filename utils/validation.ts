@@ -4,7 +4,6 @@
  * Exports:
  *  • `isValidEmail`          — Loose RFC-5322-style email check.
  *  • `checkPasswordStrength` — Returns { score, feedback } (0–4 scale).
- *  • `isValidIndianPhone`    — 10-digit Indian mobile number check.
  *  • `isValidDateOfBirth`    — Age 13–120 range check.
  *  • `normalizePhone`        — Strips whitespace/dashes, ensures +91 prefix.
  */
@@ -44,13 +43,6 @@ export function checkPasswordStrength(password: string): PasswordCheck {
     return { valid: false, message: 'Password needs at least one special character' };
   }
   return { valid: true, message: '' };
-}
-
-/** Validate a 10-digit Indian phone number (with optional +91 prefix) */
-export function isValidIndianPhone(phone: string): boolean {
-  const stripped = phone.replace(/[\s\-()]/g, '');
-  // Accept +91XXXXXXXXXX or 0XXXXXXXXXX or just 10 digits starting with 6-9
-  return /^(\+91|0)?[6-9]\d{9}$/.test(stripped);
 }
 
 /** Validate that a date of birth makes the user at least `minAge` years old */

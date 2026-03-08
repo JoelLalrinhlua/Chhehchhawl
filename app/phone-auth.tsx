@@ -18,7 +18,7 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
-    Dimensions, KeyboardAvoidingView,
+    KeyboardAvoidingView,
     Platform,
     StyleSheet,
     Text,
@@ -31,10 +31,8 @@ import Animated, {
     FadeInRight,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
+    withTiming,
 } from 'react-native-reanimated';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type Step = 'phone' | 'otp';
 
@@ -148,10 +146,10 @@ export default function PhoneAuthScreen() {
                                 style={[styles.submitButton, { backgroundColor: colors.accent }]}
                                 onPress={handleSendOtp}
                                 onPressIn={() => {
-                                    buttonScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+                                    buttonScale.value = withTiming(0.97, { duration: 80 });
                                 }}
                                 onPressOut={() => {
-                                    buttonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+                                    buttonScale.value = withTiming(1, { duration: 80 });
                                 }}
                                 disabled={loading}
                             >
@@ -181,10 +179,10 @@ export default function PhoneAuthScreen() {
                                 style={[styles.submitButton, { backgroundColor: colors.accent }]}
                                 onPress={handleVerifyOtp}
                                 onPressIn={() => {
-                                    buttonScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+                                    buttonScale.value = withTiming(0.97, { duration: 80 });
                                 }}
                                 onPressOut={() => {
-                                    buttonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+                                    buttonScale.value = withTiming(1, { duration: 80 });
                                 }}
                                 disabled={loading}
                             >

@@ -22,10 +22,9 @@ import {
     View,
 } from 'react-native';
 import Animated, {
-    FadeInDown,
     useAnimatedStyle,
     useSharedValue,
-    withSpring
+    withTiming
 } from 'react-native-reanimated';
 
 export default function ProfileScreen() {
@@ -47,8 +46,8 @@ export default function ProfileScreen() {
                     text: 'Sign Out',
                     style: 'destructive',
                     onPress: async () => {
-                        logoutScale.value = withSpring(0.95, { damping: 15 }, () => {
-                            logoutScale.value = withSpring(1, { damping: 15 });
+                        logoutScale.value = withTiming(0.95, { duration: 80 }, () => {
+                            logoutScale.value = withTiming(1, { duration: 80 });
                         });
                         await signOut();
                     },
@@ -74,7 +73,7 @@ export default function ProfileScreen() {
             contentContainerStyle={styles.scrollContent}
         >
             {/* Profile Header */}
-            <Animated.View entering={FadeInDown.duration(600)} style={styles.profileHeader}>
+            <View style={styles.profileHeader}>
                 <View style={[styles.avatar, { backgroundColor: colors.accent + '30' }]}>
                     <Text style={[styles.avatarText, { color: colors.accent }]}>{initials}</Text>
                 </View>
@@ -93,10 +92,10 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
                 )}
-            </Animated.View>
+            </View>
 
             {/* Appearance */}
-            <Animated.View entering={FadeInDown.duration(600).delay(200)}>
+            <View>
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Appearance</Text>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
                     <View style={styles.settingRow}>
@@ -118,10 +117,10 @@ export default function ProfileScreen() {
                         />
                     </View>
                 </View>
-            </Animated.View>
+            </View>
 
             {/* Account */}
-            <Animated.View entering={FadeInDown.duration(600).delay(400)}>
+            <View>
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
                     <TouchableOpacity style={styles.settingRow}>
@@ -148,10 +147,10 @@ export default function ProfileScreen() {
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                 </View>
-            </Animated.View>
+            </View>
 
             {/* Support */}
-            <Animated.View entering={FadeInDown.duration(600).delay(600)}>
+            <View>
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Support</Text>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
                     <TouchableOpacity style={styles.settingRow}>
@@ -170,26 +169,26 @@ export default function ProfileScreen() {
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                 </View>
-            </Animated.View>
+            </View>
 
             {/* Logout */}
-            <Animated.View entering={FadeInDown.duration(600).delay(800)}>
+            <View>
               <Animated.View style={logoutAnimStyle}>
                 <TouchableOpacity
                     style={[styles.logoutButton, { borderColor: '#FF4444' }]}
                     onPress={handleLogout}
                     onPressIn={() => {
-                        logoutScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+                        logoutScale.value = withTiming(0.96, { duration: 80 });
                     }}
                     onPressOut={() => {
-                        logoutScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+                        logoutScale.value = withTiming(1, { duration: 80 });
                     }}
                 >
                     <Ionicons name="log-out-outline" size={22} color="#FF4444" />
                     <Text style={styles.logoutText}>Sign Out</Text>
                 </TouchableOpacity>
               </Animated.View>
-            </Animated.View>
+            </View>
         </ScrollView>
     );
 }

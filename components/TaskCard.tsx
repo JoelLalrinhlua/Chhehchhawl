@@ -154,7 +154,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onPress, mode = 'gr
             {/* Description */}
             <Text
                 style={[gridStyles.description, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}
-                numberOfLines={2}
+                numberOfLines={3}
             >
                 {task.description || 'No description'}
             </Text>

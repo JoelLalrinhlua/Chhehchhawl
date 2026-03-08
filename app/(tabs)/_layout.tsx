@@ -31,7 +31,9 @@ export default function TabLayout() {
           paddingBottom: Platform.OS === 'ios' ? 28 : 8,
           paddingTop: 8,
         },
-        tabBarShowLabel: false, // Hide labels as per design
+        tabBarShowLabel: false,
+        animation: 'shift',
+        sceneStyle: { backgroundColor: colors.background },
       }}
     >
       <Tabs.Screen

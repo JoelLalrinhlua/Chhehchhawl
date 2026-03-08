@@ -18,10 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    FlatList,
     Keyboard,
     Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -401,13 +401,10 @@ export default function MapLocationPicker({
                         entering={FadeIn.duration(200)}
                         style={[styles.suggestionsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
                     >
-                        <FlatList
-                            data={searchResults}
-                            keyExtractor={(item) => String(item.place_id)}
-                            keyboardShouldPersistTaps="handled"
-                            style={{ maxHeight: 200 }}
-                            renderItem={({ item }) => (
+                        <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                            {searchResults.map((item) => (
                                 <Pressable
+                                    key={item.place_id}
                                     style={[styles.suggestionRow, { borderBottomColor: colors.border }]}
                                     onPress={() => handleSelectSuggestion(item)}
                                 >
@@ -419,8 +416,8 @@ export default function MapLocationPicker({
                                         {item.display_name}
                                     </Text>
                                 </Pressable>
-                            )}
-                        />
+                            ))}
+                        </ScrollView>
                     </Animated.View>
                 )}
 
@@ -525,13 +522,10 @@ export default function MapLocationPicker({
                             </Text>
                         </View>
                     ) : (
-                        <FlatList
-                            data={searchResults}
-                            keyExtractor={(item) => String(item.place_id)}
-                            keyboardShouldPersistTaps="handled"
-                            style={{ maxHeight: 200 }}
-                            renderItem={({ item }) => (
+                        <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                            {searchResults.map((item) => (
                                 <Pressable
+                                    key={item.place_id}
                                     style={[
                                         styles.suggestionRow,
                                         { borderBottomColor: colors.border },
@@ -557,8 +551,8 @@ export default function MapLocationPicker({
                                         {item.display_name}
                                     </Text>
                                 </Pressable>
-                            )}
-                        />
+                            ))}
+                        </ScrollView>
                     )}
                 </Animated.View>
             )}

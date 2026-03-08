@@ -74,17 +74,18 @@ function RootNavigator() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
-          animation: 'fade_from_bottom',
+          animation: 'fade',
+          animationDuration: 200,
         }}
       >
         {/* Auth screens */}
         <Stack.Screen name="login" options={{ animation: 'fade' }} />
-        <Stack.Screen name="phone-auth" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="phone-auth" options={{ animation: 'slide_from_right', animationDuration: 250 }} />
         {/* Profile completion */}
         <Stack.Screen name="complete-profile" options={{ animation: 'fade' }} />
         {/* Main app */}
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="create-task" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="(tabs)" options={{ animation: 'fade', animationDuration: 150 }} />
+        <Stack.Screen name="create-task" options={{ animation: 'slide_from_bottom', animationDuration: 250 }} />
       </Stack>
       <StatusBar
         style={isDark ? 'light' : 'dark'}

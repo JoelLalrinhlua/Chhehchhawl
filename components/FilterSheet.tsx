@@ -25,12 +25,10 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     FadeIn,
-    SlideInDown,
-    SlideOutDown,
+    FadeOut,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
     withTiming,
 } from 'react-native-reanimated';
 
@@ -110,10 +108,10 @@ export function FilterSheet({ visible, onClose, filters, onApply }: FilterSheetP
         })
         .onEnd((e) => {
             if (e.translationY > 120) {
-                translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+                translateY.value = withTiming(SCREEN_HEIGHT, { duration: 200 });
                 runOnJS(onClose)();
             } else {
-                translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
+                translateY.value = withTiming(0, { duration: 200 });
             }
         });
 
@@ -161,8 +159,8 @@ export function FilterSheet({ visible, onClose, filters, onApply }: FilterSheetP
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
             <Pressable style={styles.backdrop} onPress={onClose} />
             <Animated.View
-                entering={SlideInDown.springify().damping(20).stiffness(200)}
-                exiting={SlideOutDown.duration(300)}
+                entering={FadeIn.duration(200)}
+                exiting={FadeOut.duration(150)}
             >
                 <GestureDetector gesture={panGesture}>
                     <Animated.View
@@ -170,7 +168,7 @@ export function FilterSheet({ visible, onClose, filters, onApply }: FilterSheetP
                     >
                         <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
 
-                        <Animated.View entering={FadeIn.duration(300)} style={styles.header}>
+                        <View style={styles.header}>
                             <Text style={[styles.title, { color: colors.text, fontFamily: FontFamily.bold }]}>
                                 Filters
                             </Text>
@@ -179,7 +177,7 @@ export function FilterSheet({ visible, onClose, filters, onApply }: FilterSheetP
                                     Reset
                                 </Text>
                             </Pressable>
-                        </Animated.View>
+                        </View>
 
                         <ScrollView
                             showsVerticalScrollIndicator={false}
@@ -355,16 +353,17 @@ export function FilterSheet({ visible, onClose, filters, onApply }: FilterSheetP
 const styles = StyleSheet.create({
     overlay: {
         ...StyleSheet.absoluteFillObject,
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
+        alignItems: 'center',
         zIndex: 1000,
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
     },
     sheet: {
-        maxHeight: SCREEN_HEIGHT * 0.75,
-        borderTopLeftRadius: BorderRadius.xxl,
-        borderTopRightRadius: BorderRadius.xxl,
+        width: '92%',
+        maxHeight: SCREEN_HEIGHT * 0.7,
+        borderRadius: BorderRadius.lg,
         paddingTop: Spacing.md,
     },
     handle: {

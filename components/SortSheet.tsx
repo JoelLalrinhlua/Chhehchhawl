@@ -21,12 +21,10 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     FadeIn,
-    SlideInDown,
-    SlideOutDown,
+    FadeOut,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
     withTiming,
 } from 'react-native-reanimated';
 
@@ -77,10 +75,10 @@ export function SortSheet({ visible, onClose, sortConfig, onApply }: SortSheetPr
         })
         .onEnd((e) => {
             if (e.translationY > 120) {
-                translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+                translateY.value = withTiming(SCREEN_HEIGHT, { duration: 200 });
                 runOnJS(onClose)();
             } else {
-                translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
+                translateY.value = withTiming(0, { duration: 200 });
             }
         });
 
@@ -107,8 +105,8 @@ export function SortSheet({ visible, onClose, sortConfig, onApply }: SortSheetPr
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
             <Pressable style={styles.backdrop} onPress={onClose} />
             <Animated.View
-                entering={SlideInDown.springify().damping(20).stiffness(200)}
-                exiting={SlideOutDown.duration(300)}
+                entering={FadeIn.duration(200)}
+                exiting={FadeOut.duration(150)}
             >
                 <GestureDetector gesture={panGesture}>
                     <Animated.View
@@ -116,11 +114,11 @@ export function SortSheet({ visible, onClose, sortConfig, onApply }: SortSheetPr
                     >
                         <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
 
-                        <Animated.View entering={FadeIn.duration(300)} style={styles.header}>
+                        <View style={styles.header}>
                             <Text style={[styles.title, { color: colors.text, fontFamily: FontFamily.bold }]}>
                                 Sort By
                             </Text>
-                        </Animated.View>
+                        </View>
 
                         <View style={styles.optionsList}>
                             {SORT_OPTIONS.map((opt) => {
@@ -202,15 +200,16 @@ export function SortSheet({ visible, onClose, sortConfig, onApply }: SortSheetPr
 const styles = StyleSheet.create({
     overlay: {
         ...StyleSheet.absoluteFillObject,
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
+        alignItems: 'center',
         zIndex: 1000,
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
     },
     sheet: {
-        borderTopLeftRadius: BorderRadius.xxl,
-        borderTopRightRadius: BorderRadius.xxl,
+        width: '92%',
+        borderRadius: BorderRadius.lg,
         paddingTop: Spacing.md,
     },
     handle: {

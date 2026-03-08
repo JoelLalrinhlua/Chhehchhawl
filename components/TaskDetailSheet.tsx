@@ -34,7 +34,6 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
-    FadeIn,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
@@ -49,9 +48,11 @@ interface TaskDetailSheetProps {
     visible: boolean;
     onClose: () => void;
     distanceKm?: number | null;
+    /** Called when the owner deletes the task. Sheet closes automatically. */
+    onDelete?: (taskId: string) => Promise<void>;
 }
 
-export function TaskDetailSheet({ task, visible, onClose, distanceKm }: TaskDetailSheetProps) {
+export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }: TaskDetailSheetProps) {
     const { colors } = useTheme();
     const { user } = useAuth();
     const { applyForTask, withdrawApplication, getMyApplicationStatus } =
@@ -65,6 +66,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm }: TaskDeta
     const [applyLoading, setApplyLoading] = useState(false);
     const [showMessageInput, setShowMessageInput] = useState(false);
     const [applyMessage, setApplyMessage] = useState('');
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     const isOwnTask = user?.id === task.created_by;
 
@@ -143,6 +145,32 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm }: TaskDeta
         }
     };
 
+    const handleDelete = () => {
+        Alert.alert(
+            'Delete Task',
+            'Are you sure you want to delete this task? This action cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        if (!onDelete) return;
+                        setDeleteLoading(true);
+                        try {
+                            await onDelete(task.id);
+                            onClose();
+                        } catch {
+                            Alert.alert('Error', 'Failed to delete task. Please try again.');
+                        } finally {
+                            setDeleteLoading(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     const handleWithdraw = () => {
         Alert.alert(
             'Withdraw Application',
@@ -204,20 +232,49 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm }: TaskDeta
     const renderFooterButton = () => {
         if (isOwnTask) {
             return (
-                <View
-                    style={[
-                        styles.applyButton,
-                        { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-                    ]}
-                >
-                    <Text
+                <View style={styles.ownPostFooter}>
+                    <View
                         style={[
-                            styles.applyText,
-                            { color: colors.textMuted, fontFamily: FontFamily.medium },
+                            styles.ownPostLabel,
+                            { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
                         ]}
                     >
-                        Your Post
-                    </Text>
+                        <Ionicons name="create-outline" size={16} color={colors.textMuted} />
+                        <Text
+                            style={[
+                                styles.applyText,
+                                { color: colors.textMuted, fontFamily: FontFamily.medium, marginLeft: 6, fontSize: FontSize.md },
+                            ]}
+                        >
+                            Your Post
+                        </Text>
+                    </View>
+                    {onDelete && (
+                        <Pressable
+                            style={[
+                                styles.deleteButton,
+                                { backgroundColor: colors.statusRed + '15', borderWidth: 1, borderColor: colors.statusRed + '30' },
+                            ]}
+                            onPress={handleDelete}
+                            disabled={deleteLoading}
+                        >
+                            {deleteLoading ? (
+                                <ActivityIndicator size="small" color={colors.statusRed} />
+                            ) : (
+                                <>
+                                    <Ionicons name="trash-outline" size={18} color={colors.statusRed} />
+                                    <Text
+                                        style={[
+                                            styles.deleteText,
+                                            { color: colors.statusRed, fontFamily: FontFamily.bold },
+                                        ]}
+                                    >
+                                        Delete Task
+                                    </Text>
+                                </>
+                            )}
+                        </Pressable>
+                    )}
                 </View>
             );
         }
@@ -617,7 +674,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm }: TaskDeta
 
                         {/* Optional message input when applying */}
                         {showMessageInput && !isOwnTask && task.status === 'open' && (
-                            <Animated.View entering={FadeIn.duration(300)}>
+                            <View>
                                 <Text
                                     style={[
                                         styles.msgLabel,
@@ -643,7 +700,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm }: TaskDeta
                                     value={applyMessage}
                                     onChangeText={setApplyMessage}
                                 />
-                            </Animated.View>
+                            </View>
                         )}
                     </ScrollView>
 
@@ -868,6 +925,30 @@ const styles = StyleSheet.create({
     applyText: {
         color: '#FFFFFF',
         fontSize: FontSize.lg,
+    },
+    ownPostFooter: {
+        flexDirection: 'row',
+        gap: Spacing.md,
+    },
+    ownPostLabel: {
+        flex: 1,
+        borderRadius: BorderRadius.md,
+        paddingVertical: Spacing.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+    },
+    deleteButton: {
+        borderRadius: BorderRadius.md,
+        paddingVertical: Spacing.lg,
+        paddingHorizontal: Spacing.xl,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+        gap: Spacing.sm,
+    },
+    deleteText: {
+        fontSize: FontSize.md,
     },
 });
 

@@ -40,14 +40,10 @@ import {
     View
 } from 'react-native';
 import Animated, {
-    FadeIn,
-    FadeInDown,
-    FadeInRight,
     interpolateColor,
     useAnimatedStyle,
     useSharedValue,
     withSequence,
-    withSpring,
     withTiming
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -405,8 +401,8 @@ export default function CreateTaskScreen() {
         setSummaryVisible(false);
         setLoading(true);
         submitScale.value = withSequence(
-            withSpring(0.95, { damping: 15 }),
-            withSpring(1, { damping: 15 })
+            withTiming(0.95, { duration: 80 }),
+            withTiming(1, { duration: 80 })
         );
 
         try {
@@ -472,7 +468,7 @@ export default function CreateTaskScreen() {
     // STEP 0 — Task Basics: Info, Budget, Media
     // ═══════════════════════════════════════════════════════════
     const renderStep0 = () => (
-        <Animated.View entering={FadeInRight.duration(400)} key="step0">
+        <View key="step0">
             {/* Task Information */}
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.sectionHeader}>
@@ -528,24 +524,24 @@ export default function CreateTaskScreen() {
                     keyboardType="numeric"
                 />
                 {isBudgetOutOfRange && (
-                    <Animated.View entering={FadeIn.duration(300)}>
+                    <View>
                         <View style={[styles.feeNote, { backgroundColor: 'rgba(255, 152, 0, 0.1)', borderColor: 'rgba(255, 152, 0, 0.3)' }]}>
                             <Ionicons name="warning" size={16} color="#FF9800" />
                             <Text style={[styles.feeNoteText, { color: '#FF9800', fontFamily: FontFamily.medium }]}>
                                 Budget must be between ₹{MIN_BUDGET} and ₹{MAX_BUDGET}
                             </Text>
                         </View>
-                    </Animated.View>
+                    </View>
                 )}
                 {isBudgetValid && (
-                    <Animated.View entering={FadeIn.duration(300)}>
+                    <View>
                         <View style={[styles.feeNote, { backgroundColor: 'rgba(76, 175, 80, 0.1)', borderColor: 'rgba(76, 175, 80, 0.3)' }]}>
                             <Ionicons name="information-circle" size={16} color="#4CAF50" />
                             <Text style={[styles.feeNoteText, { color: '#4CAF50', fontFamily: FontFamily.medium }]}>
                                 Total payable amount: ₹{totalPayable} (includes ₹{PLATFORM_FEE} platform fee)
                             </Text>
                         </View>
-                    </Animated.View>
+                    </View>
                 )}
             </AnimatedView>
 
@@ -565,7 +561,7 @@ export default function CreateTaskScreen() {
                 {mediaItems.length > 0 && (
                     <View style={styles.mediaGrid}>
                         {mediaItems.map((item, index) => (
-                            <Animated.View key={`${item.uri}-${index}`} entering={FadeIn.duration(300)} style={styles.mediaThumbnailContainer}>
+                            <View key={`${item.uri}-${index}`} style={styles.mediaThumbnailContainer}>
                                 <Image source={{ uri: item.uri }} style={styles.mediaThumbnail} />
                                 {item.type === 'video' && (
                                     <View style={styles.videoOverlay}>
@@ -581,7 +577,7 @@ export default function CreateTaskScreen() {
                                 <Pressable style={styles.removeMediaButton} onPress={() => removeMedia(index)}>
                                     <Ionicons name="close-circle" size={22} color="#F44336" />
                                 </Pressable>
-                            </Animated.View>
+                            </View>
                         ))}
                     </View>
                 )}
@@ -613,14 +609,14 @@ export default function CreateTaskScreen() {
                     Up to 6 images and 2 videos (each video &lt; 1 GB)
                 </Text>
             </View>
-        </Animated.View>
+        </View>
     );
 
     // ═══════════════════════════════════════════════════════════
     // STEP 1 — Location (Interactive Map)
     // ═══════════════════════════════════════════════════════════
     const renderStep1 = () => (
-        <Animated.View entering={FadeInRight.duration(400)} key="step1">
+        <View key="step1">
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.sectionHeader}>
                     <Ionicons name="location" size={20} color={colors.accent} />
@@ -644,34 +640,15 @@ export default function CreateTaskScreen() {
                 />
 
                 {selectedLocation && (
-                    <Animated.View entering={FadeIn.duration(200)}>
+                    <View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs, gap: Spacing.xs }}>
                             <Ionicons name="pin" size={14} color={colors.accent} />
                             <Text style={{ fontSize: FontSize.xs, color: colors.textMuted, fontFamily: FontFamily.regular, flex: 1 }} numberOfLines={1}>
                                 {detectedAddress || `${selectedLocation.latitude.toFixed(5)}, ${selectedLocation.longitude.toFixed(5)}`}
                             </Text>
                         </View>
-                    </Animated.View>
+                    </View>
                 )}
-
-                <View style={{ height: 1, backgroundColor: colors.border, marginVertical: Spacing.lg }} />
-
-                <Text style={[styles.subLabel, { color: colors.text, fontFamily: FontFamily.medium }]}>
-                    Address Details
-                </Text>
-
-                <AnimatedInput
-                    label="House/Building Name"
-                    placeholder="Eg: Vanlawn Building, Flat 302"
-                    value={building}
-                    onChangeText={setBuilding}
-                />
-                <AnimatedInput
-                    label="Locality/Area"
-                    placeholder="Eg: Zarkawt, Aizawl"
-                    value={locality}
-                    onChangeText={setLocality}
-                />
 
                 {/* More Description Toggle */}
                 <Pressable onPress={() => setShowExtraDesc(!showExtraDesc)} style={styles.moreDescToggle}>
@@ -681,7 +658,26 @@ export default function CreateTaskScreen() {
                 </Pressable>
 
                 {showExtraDesc && (
-                    <Animated.View entering={FadeInDown.duration(300)}>
+                    <View>
+                        <View style={{ height: 1, backgroundColor: colors.border, marginBottom: Spacing.lg }} />
+
+                        <Text style={[styles.subLabel, { color: colors.text, fontFamily: FontFamily.medium }]}>
+                            Address Details
+                        </Text>
+
+                        <AnimatedInput
+                            label="House/Building Name"
+                            placeholder="Eg: Vanlawn Building, Flat 302"
+                            value={building}
+                            onChangeText={setBuilding}
+                        />
+                        <AnimatedInput
+                            label="Locality/Area"
+                            placeholder="Eg: Zarkawt, Aizawl"
+                            value={locality}
+                            onChangeText={setLocality}
+                        />
+
                         <AnimatedInput
                             label="Additional Location Details"
                             placeholder="Landmarks, building details, floor number, etc."
@@ -691,17 +687,17 @@ export default function CreateTaskScreen() {
                             numberOfLines={3}
                             style={{ minHeight: 80, textAlignVertical: 'top' }}
                         />
-                    </Animated.View>
+                    </View>
                 )}
             </View>
-        </Animated.View>
+        </View>
     );
 
     // ═══════════════════════════════════════════════════════════
     // STEP 2 — Categories, Urgency, Negotiation
     // ═══════════════════════════════════════════════════════════
     const renderStep2 = () => (
-        <Animated.View entering={FadeInRight.duration(400)} key="step2">
+        <View key="step2">
             {/* Categories */}
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.sectionHeader}>
@@ -718,7 +714,7 @@ export default function CreateTaskScreen() {
                     {CATEGORIES.map((cat, index) => {
                         const isSelected = selectedCategories.includes(cat);
                         return (
-                            <Animated.View key={cat} entering={FadeInDown.duration(300).delay(index * 40)}>
+                            <View key={cat}>
                                 <Pressable
                                     style={[
                                         styles.categoryChip,
@@ -741,7 +737,7 @@ export default function CreateTaskScreen() {
                                         {cat}
                                     </Text>
                                 </Pressable>
-                            </Animated.View>
+                            </View>
                         );
                     })}
                 </View>
@@ -818,7 +814,7 @@ export default function CreateTaskScreen() {
                     />
                 </View>
             </View>
-        </Animated.View>
+        </View>
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -832,8 +828,7 @@ export default function CreateTaskScreen() {
             onRequestClose={() => setSummaryVisible(false)}
         >
             <View style={styles.summaryOverlay}>
-                <Animated.View
-                    entering={FadeIn.duration(300)}
+                <View
                     style={[styles.summaryModal, { backgroundColor: colors.card }]}
                 >
                     <ScrollView showsVerticalScrollIndicator={false}>
@@ -884,7 +879,7 @@ export default function CreateTaskScreen() {
                             </Text>
                         </Pressable>
                     </View>
-                </Animated.View>
+                </View>
             </View>
         </Modal>
     );
@@ -899,7 +894,7 @@ export default function CreateTaskScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
                 {/* Header */}
-                <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
+                <View style={styles.header}>
                     <Pressable onPress={() => router.back()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </Pressable>
@@ -907,7 +902,7 @@ export default function CreateTaskScreen() {
                         Create Task
                     </Text>
                     <View style={{ width: 40 }} />
-                </Animated.View>
+                </View>
 
                 {/* Step Title + Indicator */}
                 <View style={styles.stepRow}>

@@ -18,6 +18,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Alert,
     Dimensions,
     FlatList,
     Pressable,
@@ -26,8 +27,6 @@ import {
     View,
 } from 'react-native';
 import Animated, {
-    FadeIn,
-    FadeInDown,
     useAnimatedStyle,
     useSharedValue,
     withTiming,
@@ -40,10 +39,11 @@ const TABS = ['My Posts', 'My Tasks'];
 export default function MyTasksScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
-    const { getMyPosts, getMyTasks, refreshTasks } = useTasks();
+    const { getMyPosts, getMyTasks, refreshTasks, deleteTask } = useTasks();
     const { applicantCounts, refreshApplicantCounts } = useApplications();
     const [activeTab, setActiveTab] = useState(0);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+    const [selectedPostTask, setSelectedPostTask] = useState<Task | null>(null);
     const [applicantSheetTask, setApplicantSheetTask] = useState<Task | null>(null);
     const tabIndicatorX = useSharedValue(0);
 
@@ -56,6 +56,18 @@ export default function MyTasksScreen() {
             refreshApplicantCounts(myPosts.map((t) => t.id));
         }
     }, [activeTab, myPosts.length]);
+
+    // Handle task deletion from My Posts
+    const handleDeleteTask = useCallback(async (taskId: string) => {
+        const result = await deleteTask(taskId);
+        if (result.error) {
+            Alert.alert('Error', result.error);
+            throw new Error(result.error);
+        }
+        // Close the detail sheet and refresh counts
+        setSelectedPostTask(null);
+        refreshApplicantCounts(myPosts.filter(t => t.id !== taskId).map(t => t.id));
+    }, [deleteTask, myPosts, refreshApplicantCounts]);
 
     const indicatorStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: tabIndicatorX.value }],
@@ -95,13 +107,13 @@ export default function MyTasksScreen() {
         const statusCfg = getStatusConfig(item.status);
 
         return (
-            <Animated.View entering={FadeInDown.duration(300).delay(index * 60)}>
+            <Animated.View>
                 <Pressable
                     style={[
                         styles.postCard,
                         { backgroundColor: colors.card, borderColor: colors.border },
                     ]}
-                    onPress={() => setApplicantSheetTask(item)}
+                    onPress={() => setSelectedPostTask(item)}
                 >
                     {/* Left: status indicator */}
                     <View
@@ -254,7 +266,7 @@ export default function MyTasksScreen() {
             style={[styles.container, { backgroundColor: colors.background }]}
         >
             {/* Header */}
-            <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
+            <View style={styles.header}>
                 <Text
                     style={[
                         styles.headerTitle,
@@ -263,7 +275,7 @@ export default function MyTasksScreen() {
                 >
                     Task History
                 </Text>
-            </Animated.View>
+            </View>
 
             {/* Tab Bar */}
             <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
@@ -333,6 +345,16 @@ export default function MyTasksScreen() {
                     columnWrapperStyle={
                         myTasks.length > 0 ? styles.row : undefined
                     }
+                />
+            )}
+
+            {/* Task Detail Sheet (for My Posts) */}
+            {selectedPostTask && (
+                <TaskDetailSheet
+                    task={selectedPostTask}
+                    visible={!!selectedPostTask}
+                    onClose={() => setSelectedPostTask(null)}
+                    onDelete={handleDeleteTask}
                 />
             )}
 

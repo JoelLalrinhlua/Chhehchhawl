@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
 import {
-    Dimensions,
     Image,
     StyleSheet,
     Text,
@@ -21,14 +20,11 @@ import {
     View,
 } from 'react-native';
 import Animated, {
-    FadeInDown,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
+    withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DashboardCard = ({
     title,
@@ -51,16 +47,16 @@ const DashboardCard = ({
     }));
 
     return (
-        <Animated.View entering={FadeInDown.delay(delay).duration(600)}>
+        <Animated.View>
             <Animated.View style={animatedStyle}>
                 <TouchableOpacity
                     style={[styles.card, { backgroundColor: colors.card }]}
                     onPress={onPress}
                     onPressIn={() => {
-                        scale.value = withSpring(0.98, { damping: 15 });
+                        scale.value = withTiming(0.98, { duration: 100 });
                     }}
                     onPressOut={() => {
-                        scale.value = withSpring(1, { damping: 15 });
+                        scale.value = withTiming(1, { duration: 100 });
                     }}
                     activeOpacity={0.9}
                 >
@@ -113,7 +109,7 @@ export default function DashboardScreen() {
 
             <View style={styles.content}>
                 {/* Welcome Section */}
-                <Animated.View entering={FadeInDown.duration(600)} style={styles.welcomeSection}>
+                <Animated.View style={styles.welcomeSection}>
                     <Text style={[styles.welcomeText, { color: colors.text }]}>Welcome back,</Text>
                     <Text style={[styles.nameText, { color: colors.accent }]}>{firstName}</Text>
                     <Text style={[styles.taglineText, { color: colors.textMuted }]}>

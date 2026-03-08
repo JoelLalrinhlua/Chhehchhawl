@@ -35,7 +35,7 @@ import Animated, {
     FadeInDown,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
+    withTiming,
 } from 'react-native-reanimated';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -205,10 +205,10 @@ export default function LoginScreen() {
                             style={[styles.submitButton, { backgroundColor: colors.accent }]}
                             onPress={handleEmailAuth}
                             onPressIn={() => {
-                                buttonScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+                                buttonScale.value = withTiming(0.97, { duration: 80 });
                             }}
                             onPressOut={() => {
-                                buttonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+                                buttonScale.value = withTiming(1, { duration: 80 });
                             }}
                             disabled={loading}
                             activeOpacity={0.9}

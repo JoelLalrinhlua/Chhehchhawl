@@ -18,7 +18,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Mock chat data
@@ -54,7 +54,7 @@ export default function ChatScreen() {
     const [search, setSearch] = useState('');
 
     const renderItem = ({ item, index }: { item: typeof CHATS[0]; index: number }) => (
-        <Animated.View entering={FadeInDown.delay(index * 100).duration(400)}>
+        <Animated.View>
             <TouchableOpacity style={[styles.chatItem, { backgroundColor: colors.card }]}>
                 <View style={[styles.avatar, { backgroundColor: colors.border }]}>
                     {item.avatar ? (

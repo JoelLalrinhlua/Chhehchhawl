@@ -30,10 +30,9 @@ import {
     View,
 } from 'react-native';
 import Animated, {
-    FadeIn,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
+    withTiming
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -92,8 +91,8 @@ export default function HomeScreen() {
     }));
 
     const handleCreateTask = () => {
-        fabScale.value = withSpring(0.9, { damping: 15 }, () => {
-            fabScale.value = withSpring(1, { damping: 15 });
+        fabScale.value = withTiming(0.92, { duration: 80 }, () => {
+            fabScale.value = withTiming(1, { duration: 80 });
         });
         router.push('/create-task');
     };
@@ -203,7 +202,7 @@ export default function HomeScreen() {
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
-            <Animated.View entering={FadeIn.duration(600)} style={[styles.header, { backgroundColor: colors.accent }]}>
+            <View style={[styles.header, { backgroundColor: colors.accent }]}>
                 <Text style={[styles.headerTitle, { fontFamily: FontFamily.bold }]}>Find Task</Text>
                 <AnimatedPressable
                     style={[styles.fab, { backgroundColor: colors.background }, fabAnimatedStyle]}
@@ -211,7 +210,7 @@ export default function HomeScreen() {
                 >
                     <Ionicons name="add" size={28} color={colors.accent} />
                 </AnimatedPressable>
-            </Animated.View>
+            </View>
 
             {/* Controls Row */}
             <View style={[styles.controlsRow, { backgroundColor: colors.background }]}>
@@ -335,33 +334,33 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: Spacing.xl,
-        paddingTop: Spacing.xl,
-        paddingBottom: Spacing.xl,
-        borderBottomLeftRadius: BorderRadius.xl,
-        borderBottomRightRadius: BorderRadius.xl,
+        paddingHorizontal: Spacing.lg,
+        paddingTop: Spacing.md,
+        paddingBottom: Spacing.md,
+        borderRadius: 0,
     },
     headerTitle: {
-        fontSize: FontSize.xxxl,
+        fontSize: FontSize.xxl,
         color: '#FFFFFF',
     },
     fab: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
     },
     controlsRow: {
         paddingHorizontal: Spacing.lg,
-        paddingVertical: Spacing.md,
-        gap: Spacing.sm,
+        paddingTop: Spacing.sm,
+        paddingBottom: Spacing.xs,
+        gap: Spacing.xs,
     },
     locationSection: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: Spacing.xs,
-        marginBottom: Spacing.xs,
+        marginBottom: 2,
     },
     locationText: {
         flex: 1,
@@ -409,13 +408,13 @@ const styles = StyleSheet.create({
     grid: {
         paddingHorizontal: Spacing.xs,
         paddingBottom: Spacing.huge,
-        paddingTop: Spacing.xs,
+        paddingTop: 2,
     },
     gridRow: {
         justifyContent: 'space-between',
     },
     list: {
         paddingBottom: Spacing.huge,
-        paddingTop: Spacing.xs,
+        paddingTop: 2,
     },
 });

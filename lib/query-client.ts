@@ -9,7 +9,7 @@
  * Used by `<QueryClientProvider>` in the root layout.
  */
 
-import { QueryClient } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
 import type { AppStateStatus } from 'react-native';
 import { AppState, Platform } from 'react-native';
 
@@ -20,8 +20,6 @@ function onAppStateChange(status: AppStateStatus) {
         focusManager.setFocused(status === 'active');
     }
 }
-
-import { focusManager } from '@tanstack/react-query';
 
 // Wire up app-state based focus management
 const subscription = AppState.addEventListener('change', onAppStateChange);

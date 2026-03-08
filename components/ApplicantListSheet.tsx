@@ -30,12 +30,10 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     FadeIn,
     FadeInDown,
-    SlideInDown,
-    SlideOutDown,
+    FadeOut,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
     withTiming,
 } from 'react-native-reanimated';
 
@@ -88,10 +86,10 @@ export function ApplicantListSheet({
         })
         .onEnd((e) => {
             if (e.translationY > 120) {
-                translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+                translateY.value = withTiming(SCREEN_HEIGHT, { duration: 200 });
                 runOnJS(onClose)();
             } else {
-                translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
+                translateY.value = withTiming(0, { duration: 200 });
             }
         });
 
@@ -330,8 +328,8 @@ export function ApplicantListSheet({
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
             <Pressable style={styles.backdrop} onPress={onClose} />
             <Animated.View
-                entering={SlideInDown.springify().damping(20).stiffness(200)}
-                exiting={SlideOutDown.duration(300)}
+                entering={FadeIn.duration(200)}
+                exiting={FadeOut.duration(150)}
             >
               <GestureDetector gesture={panGesture}>
                 <Animated.View
@@ -344,8 +342,7 @@ export function ApplicantListSheet({
                     <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
 
                     {/* Header */}
-                    <Animated.View
-                        entering={FadeIn.duration(400)}
+                    <View
                         style={styles.sheetHeader}
                     >
                         <Text
@@ -393,7 +390,7 @@ export function ApplicantListSheet({
                                 </Text>
                             </View>
                         )}
-                    </Animated.View>
+                    </View>
 
                     {/* List */}
                     {loading ? (
@@ -462,9 +459,9 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
     },
     sheet: {
-        maxHeight: SCREEN_HEIGHT * 0.8,
-        borderTopLeftRadius: BorderRadius.xxl,
-        borderTopRightRadius: BorderRadius.xxl,
+        height: SCREEN_HEIGHT * 0.77,
+        borderTopLeftRadius: BorderRadius.xl,
+        borderTopRightRadius: BorderRadius.xl,
         paddingTop: Spacing.md,
     },
     handle: {
