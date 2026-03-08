@@ -28,6 +28,14 @@
     "/^npx expo customize metro\\.config\\.js 2>&1$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^npx react-native config 2>\\$null \\| findstr /i \"webview\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^git add \\.$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }

@@ -13,6 +13,7 @@
  */
 
 import { AnimatedInput } from '@/components/AnimatedInput';
+import MapLocationPicker from '@/components/MapLocationPicker';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTasks } from '@/contexts/TaskContext';
@@ -22,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -83,7 +84,7 @@ interface MediaItem {
 }
 
 export default function CreateTaskScreen() {
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { addTask } = useTasks();
     const { user } = useAuth();
     const router = useRouter();
@@ -113,6 +114,9 @@ export default function CreateTaskScreen() {
 
     // ── Summary Modal State ──
     const [summaryVisible, setSummaryVisible] = useState(false);
+
+    // ── Refs ──
+    const reverseGeocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // ── Animations ──
     const submitScale = useSharedValue(1);
@@ -342,6 +346,42 @@ export default function CreateTaskScreen() {
         }
         setLocationDetecting(false);
     };
+
+    // Auto-detect GPS when the user enters the Location step
+    useEffect(() => {
+        if (step === 1 && !userLocation && !locationDetecting) {
+            detectTaskLocation();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [step]);
+
+    // Handle map location changes: update coordinates + debounced reverse geocoding
+    const handleMapLocationSelect = useCallback(
+        (coords: { latitude: number; longitude: number }) => {
+            setSelectedLocation(coords);
+
+            if (reverseGeocodeTimer.current) clearTimeout(reverseGeocodeTimer.current);
+            reverseGeocodeTimer.current = setTimeout(async () => {
+                try {
+                    const [result] = await Location.reverseGeocodeAsync(coords);
+                    if (result) {
+                        const parts = [
+                            result.name,
+                            result.district,
+                            result.subregion,
+                            result.city,
+                        ].filter(Boolean);
+                        const address = parts.join(', ') || 'Selected Location';
+                        setDetectedAddress(address);
+                        setLocality(address);
+                    }
+                } catch {
+                    // Silent fail — user can still enter address manually
+                }
+            }, 600);
+        },
+        []
+    );
 
     // ── Categories ──
     const toggleCategory = (cat: string) => {
@@ -577,7 +617,7 @@ export default function CreateTaskScreen() {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // STEP 1 — Location
+    // STEP 1 — Location (Interactive Map)
     // ═══════════════════════════════════════════════════════════
     const renderStep1 = () => (
         <Animated.View entering={FadeInRight.duration(400)} key="step1">
@@ -589,39 +629,35 @@ export default function CreateTaskScreen() {
                     </Text>
                 </View>
 
-                <Text style={[styles.subLabel, { color: colors.text, fontFamily: FontFamily.medium }]}>
-                    Detect location automatically
+                <Text style={[styles.subLabel, { color: colors.textMuted, fontFamily: FontFamily.regular, marginBottom: Spacing.md }]}>
+                    Search, tap the map, or drag the pin to set where the task takes place
                 </Text>
-                <Pressable
-                    style={[styles.mapButton, { backgroundColor: colors.inputBackground, borderColor: selectedLocation ? colors.accent : colors.border }]}
-                    onPress={detectTaskLocation}
-                    disabled={locationDetecting}
-                >
-                    {locationDetecting ? (
-                        <ActivityIndicator size="small" color={colors.accent} />
-                    ) : (
-                        <>
-                            <Text style={[styles.mapButtonText, { color: selectedLocation ? colors.text : colors.textMuted, fontFamily: FontFamily.regular, flex: 1 }]}>
-                                {selectedLocation ? `📍 ${detectedAddress || 'Location detected'}` : 'Detect My Location'}
-                            </Text>
-                            <Ionicons name={selectedLocation ? 'checkmark-circle' : 'locate'} size={20} color={selectedLocation ? colors.accent : colors.textMuted} />
-                        </>
-                    )}
-                </Pressable>
+
+                <MapLocationPicker
+                    userLocation={userLocation}
+                    selectedLocation={selectedLocation}
+                    onLocationSelect={handleMapLocationSelect}
+                    colors={colors}
+                    isDark={isDark}
+                    isDetecting={locationDetecting}
+                    onRecenter={detectTaskLocation}
+                />
+
                 {selectedLocation && (
                     <Animated.View entering={FadeIn.duration(200)}>
-                        <Text style={{ fontSize: FontSize.xs, color: colors.textMuted, fontFamily: FontFamily.regular, marginTop: Spacing.xs, marginLeft: 4 }}>
-                            {selectedLocation.latitude.toFixed(5)}, {selectedLocation.longitude.toFixed(5)}
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs, gap: Spacing.xs }}>
+                            <Ionicons name="pin" size={14} color={colors.accent} />
+                            <Text style={{ fontSize: FontSize.xs, color: colors.textMuted, fontFamily: FontFamily.regular, flex: 1 }} numberOfLines={1}>
+                                {detectedAddress || `${selectedLocation.latitude.toFixed(5)}, ${selectedLocation.longitude.toFixed(5)}`}
+                            </Text>
+                        </View>
                     </Animated.View>
                 )}
 
-                <Text style={[styles.orText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
-                    - OR -
-                </Text>
+                <View style={{ height: 1, backgroundColor: colors.border, marginVertical: Spacing.lg }} />
 
                 <Text style={[styles.subLabel, { color: colors.text, fontFamily: FontFamily.medium }]}>
-                    Enter address details manually
+                    Address Details
                 </Text>
 
                 <AnimatedInput
@@ -900,6 +936,7 @@ export default function CreateTaskScreen() {
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled={true}
                 >
                     {step === 0 && renderStep0()}
                     {step === 1 && renderStep1()}
