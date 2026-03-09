@@ -32,4 +32,18 @@ export const queryKeys = {
         counts: (taskIds: string[]) =>
             ['applications', 'counts', ...taskIds.sort()] as const,
     },
+
+    // ── Chat ──
+    chat: {
+        all: ['chat'] as const,
+        rooms: (userId: string) => ['chat', 'rooms', userId] as const,
+        messages: (roomId: string) => ['chat', 'messages', roomId] as const,
+    },
+
+    // ── Notifications ──
+    notifications: {
+        all: ['notifications'] as const,
+        list: (userId: string) => ['notifications', 'list', userId] as const,
+        unreadCount: (userId: string) => ['notifications', 'unread-count', userId] as const,
+    },
 } as const;

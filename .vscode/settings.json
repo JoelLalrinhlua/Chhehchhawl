@@ -4,6 +4,7 @@
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
   },
+  "npm.packageManager": "npm",
   "chat.tools.terminal.autoApprove": {
     "/^node scripts/test-supabase\\.js$/": {
       "approve": true,

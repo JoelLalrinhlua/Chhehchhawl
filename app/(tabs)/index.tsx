@@ -6,12 +6,17 @@
  * tasks, view history, edit profile.
  */
 
+import { NotificationSheet } from '@/components/NotificationSheet';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useUnreadNotificationCountQuery } from '@/hooks/use-notification-queries';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Image,
     StyleSheet,
@@ -76,6 +81,36 @@ const DashboardCard = ({
 export default function DashboardScreen() {
     const { user, profile } = useAuth();
     const { colors } = useTheme();
+    const [notifVisible, setNotifVisible] = useState(false);
+
+    const { data: unreadCount = 0 } = useUnreadNotificationCountQuery(user?.id);
+
+    // Realtime subscription for live badge updates
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const channel = supabase
+            .channel('home-notifications')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${user.id}`,
+                },
+                () => {
+                    queryClient.invalidateQueries({
+                        queryKey: queryKeys.notifications.unreadCount(user.id),
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user?.id]);
 
     const firstName = profile?.full_name?.split(' ')[0] || 'User';
 
@@ -95,9 +130,18 @@ export default function DashboardScreen() {
                     </View>
                 </View>
                 <View style={styles.headerRight}>
-                    <TouchableOpacity style={styles.iconButton}>
+                    <TouchableOpacity
+                        style={styles.iconButton}
+                        onPress={() => setNotifVisible(true)}
+                    >
                         <Ionicons name="notifications-outline" size={24} color={colors.text} />
-                        <View style={[styles.badge, { backgroundColor: colors.accent }]} />
+                        {unreadCount > 0 && (
+                            <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+                                <Text style={styles.badgeText}>
+                                    {unreadCount > 9 ? '9+' : unreadCount}
+                                </Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                     <Image
                         source={require('@/assets/images/LOGO Chhehchhawl.png')}
@@ -142,6 +186,18 @@ export default function DashboardScreen() {
                     />
                 </View>
             </View>
+
+            <NotificationSheet
+                visible={notifVisible}
+                onClose={() => {
+                    setNotifVisible(false);
+                    if (user?.id) {
+                        queryClient.invalidateQueries({
+                            queryKey: queryKeys.notifications.unreadCount(user.id),
+                        });
+                    }
+                }}
+            />
         </SafeAreaView>
     );
 }
@@ -191,13 +247,20 @@ const styles = StyleSheet.create({
     },
     badge: {
         position: 'absolute',
-        top: 8,
-        right: 8,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        borderWidth: 1.5,
-        borderColor: 'transparent',
+        top: 4,
+        right: 2,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    badgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontFamily: FontFamily.bold,
+        lineHeight: 14,
     },
     logo: {
         width: 32,

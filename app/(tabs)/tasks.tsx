@@ -17,6 +17,8 @@ import { TaskDetailSheet } from '@/components/TaskDetailSheet';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useTasks, type Task } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useApplicantCountsQuery } from '@/hooks/use-application-queries';
+import { MAX_APPLICANTS } from '@/hooks/use-task-queries';
 import { haversine } from '@/utils/distance';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -44,6 +46,10 @@ export default function HomeScreen() {
     const { colors } = useTheme();
     const { tasks } = useTasks();
     const router = useRouter();
+
+    // Fetch applicant counts to hide full tasks
+    const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
+    const { data: applicantCounts = {} } = useApplicantCountsQuery(taskIds);
 
     // ── State ──
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -113,7 +119,10 @@ export default function HomeScreen() {
 
     // ── Processed tasks: filter → sort → enrich ──
     const processedTasks = useMemo(() => {
-        let result = [...tasks];
+        // Hide tasks that have reached the applicant cap
+        let result = tasks.filter(
+            (t) => (applicantCounts[t.id] ?? 0) < MAX_APPLICANTS
+        );
 
         // Filter: categories
         if (filters.categories.length > 0) {
@@ -173,7 +182,7 @@ export default function HomeScreen() {
         });
 
         return result;
-    }, [tasks, filters, sortConfig, getDistanceKm]);
+    }, [tasks, filters, sortConfig, getDistanceKm, applicantCounts]);
 
     // ── View toggle ──
     const toggleViewMode = () => {

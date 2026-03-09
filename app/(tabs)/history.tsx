@@ -15,8 +15,10 @@ import { useApplications } from '@/contexts/ApplicationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTasks, type Task } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useConfirmTaskCompletionMutation, useFinishTaskMutation } from '@/hooks/use-mutations';
+import { useMyAppliedTasksQuery, type AppliedTask } from '@/hooks/use-task-queries';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Dimensions,
@@ -40,15 +42,39 @@ export default function MyTasksScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
     const { getMyPosts, getMyTasks, refreshTasks, deleteTask } = useTasks();
-    const { applicantCounts, refreshApplicantCounts } = useApplications();
+    const { applicantCounts, refreshApplicantCounts, myApplications } = useApplications();
     const [activeTab, setActiveTab] = useState(0);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
     const [selectedPostTask, setSelectedPostTask] = useState<Task | null>(null);
     const [applicantSheetTask, setApplicantSheetTask] = useState<Task | null>(null);
     const tabIndicatorX = useSharedValue(0);
 
+    const finishTaskMutation = useFinishTaskMutation(user?.id);
+    const confirmCompletionMutation = useConfirmTaskCompletionMutation(user?.id);
+
     const myPosts = getMyPosts(user?.id || '');
     const myTasks = getMyTasks(user?.id || '');
+
+    // Applied tasks (pending / rejected, not yet assigned to user)
+    const { data: appliedTasks = [] } = useMyAppliedTasksQuery(
+        !!user,
+        user?.id,
+        myApplications
+    );
+
+    // Unified My Tasks list: assigned tasks + applied tasks
+    type MyTaskItem =
+        | (Task & { _kind: 'assigned' })
+        | (AppliedTask & { _kind: 'applied' });
+
+    const unifiedMyTasks = useMemo<MyTaskItem[]>(() => {
+        const assigned: MyTaskItem[] = myTasks.map((t) => ({ ...t, _kind: 'assigned' as const }));
+        const applied: MyTaskItem[] = appliedTasks.map((t) => ({ ...t, _kind: 'applied' as const }));
+        // Applied-pending first, then assigned tasks, then applied-rejected at end
+        const pending = applied.filter((t) => t.applicationStatus === 'pending');
+        const rejected = applied.filter((t) => t.applicationStatus === 'rejected');
+        return [...pending, ...assigned, ...rejected];
+    }, [myTasks, appliedTasks]);
 
     // Fetch applicant counts when viewing My Posts
     useEffect(() => {
@@ -56,6 +82,30 @@ export default function MyTasksScreen() {
             refreshApplicantCounts(myPosts.map((t) => t.id));
         }
     }, [activeTab, myPosts.length]);
+
+    // Handle tasker finishing a task (My Tasks)
+    const handleFinishTask = useCallback(async (taskId: string) => {
+        try {
+            await finishTaskMutation.mutateAsync({ taskId });
+            refreshTasks();
+            setSelectedTask(null);
+        } catch (err: any) {
+            Alert.alert('Error', err.message ?? 'Failed to finish task');
+            throw err;
+        }
+    }, [finishTaskMutation, refreshTasks]);
+
+    // Handle poster confirming task completion (My Posts)
+    const handleConfirmCompletion = useCallback(async (taskId: string) => {
+        try {
+            await confirmCompletionMutation.mutateAsync({ taskId });
+            refreshTasks();
+            setSelectedPostTask(null);
+        } catch (err: any) {
+            Alert.alert('Error', err.message ?? 'Failed to confirm completion');
+            throw err;
+        }
+    }, [confirmCompletionMutation, refreshTasks]);
 
     // Handle task deletion from My Posts
     const handleDeleteTask = useCallback(async (taskId: string) => {
@@ -92,6 +142,8 @@ export default function MyTasksScreen() {
                     return { label: 'In Progress', color: colors.statusOrange, icon: 'time' as const };
                 case 'completed':
                     return { label: 'Completed', color: colors.textMuted, icon: 'checkmark-circle' as const };
+                case 'pending_confirmation':
+                    return { label: 'Pending Confirmation', color: colors.statusOrange, icon: 'hourglass' as const };
                 case 'cancelled':
                     return { label: 'Cancelled', color: colors.statusRed, icon: 'close-circle' as const };
                 default:
@@ -241,6 +293,106 @@ export default function MyTasksScreen() {
         </View>
     );
 
+    // ── Application status config ──
+    const getAppStatusConfig = useCallback(
+        (appStatus: 'pending' | 'rejected') => {
+            if (appStatus === 'pending') {
+                return { label: 'Pending', color: colors.statusOrange, icon: 'time' as const };
+            }
+            return { label: 'Not Selected', color: colors.statusRed, icon: 'close-circle' as const };
+        },
+        [colors]
+    );
+
+    // ── Unified My Tasks item (assigned tasks + applied tasks) ──
+    const renderMyTaskItem = ({ item }: { item: typeof unifiedMyTasks[number] }) => {
+        const isApplied = item._kind === 'applied';
+        const statusCfg = isApplied
+            ? getAppStatusConfig(item.applicationStatus)
+            : getStatusConfig(item.status);
+
+        return (
+            <Pressable
+                style={[
+                    styles.postCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+                onPress={() => setSelectedTask(item)}
+            >
+                <View
+                    style={[
+                        styles.postStatusStrip,
+                        { backgroundColor: statusCfg.color },
+                    ]}
+                />
+                <View style={styles.postContent}>
+                    <View style={styles.postTopRow}>
+                        <Text
+                            style={[
+                                styles.postTitle,
+                                { color: colors.text, fontFamily: FontFamily.semiBold },
+                            ]}
+                            numberOfLines={1}
+                        >
+                            {item.title}
+                        </Text>
+                        <View
+                            style={[
+                                styles.statusChip,
+                                { backgroundColor: statusCfg.color + '18' },
+                            ]}
+                        >
+                            <Ionicons
+                                name={statusCfg.icon}
+                                size={12}
+                                color={statusCfg.color}
+                            />
+                            <Text
+                                style={[
+                                    styles.statusChipText,
+                                    {
+                                        color: statusCfg.color,
+                                        fontFamily: FontFamily.medium,
+                                    },
+                                ]}
+                            >
+                                {statusCfg.label}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={styles.postBottomRow}>
+                        <Text
+                            style={[
+                                styles.postBudget,
+                                { color: colors.accent, fontFamily: FontFamily.bold },
+                            ]}
+                        >
+                            ₹{item.budget}
+                        </Text>
+                        {isApplied && (
+                            <Text
+                                style={[
+                                    styles.postTime,
+                                    { color: colors.textMuted, fontFamily: FontFamily.regular },
+                                ]}
+                            >
+                                Applied
+                            </Text>
+                        )}
+                    </View>
+                    <Text
+                        style={[
+                            styles.postTime,
+                            { color: colors.textMuted, fontFamily: FontFamily.regular },
+                        ]}
+                    >
+                        {formatDate(item.created_at)}
+                    </Text>
+                </View>
+            </Pressable>
+        );
+    };
+
     const renderEmpty = () => (
         <View style={styles.emptyContainer}>
             <Ionicons
@@ -256,7 +408,7 @@ export default function MyTasksScreen() {
             >
                 {activeTab === 0
                     ? "You haven't posted any tasks yet"
-                    : 'No tasks assigned to you yet'}
+                    : 'No tasks or applications yet'}
             </Text>
         </View>
     );
@@ -332,19 +484,18 @@ export default function MyTasksScreen() {
                     )}
                 />
             ) : (
-                // My Tasks — card grid
+                // My Tasks — unified structured list (assigned + applied)
                 <FlatList
-                    key="my-tasks-grid"
-                    data={myTasks}
-                    renderItem={renderMyTaskCard}
-                    keyExtractor={(item) => item.id}
-                    numColumns={2}
-                    contentContainerStyle={styles.grid}
+                    key="my-tasks-list"
+                    data={unifiedMyTasks}
+                    renderItem={renderMyTaskItem}
+                    keyExtractor={(item) => item.id + item._kind}
+                    contentContainerStyle={styles.listContent}
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={renderEmpty}
-                    columnWrapperStyle={
-                        myTasks.length > 0 ? styles.row : undefined
-                    }
+                    ItemSeparatorComponent={() => (
+                        <View style={{ height: Spacing.sm }} />
+                    )}
                 />
             )}
 
@@ -355,6 +506,7 @@ export default function MyTasksScreen() {
                     visible={!!selectedPostTask}
                     onClose={() => setSelectedPostTask(null)}
                     onDelete={handleDeleteTask}
+                    onConfirmCompletion={handleConfirmCompletion}
                 />
             )}
 
@@ -364,6 +516,7 @@ export default function MyTasksScreen() {
                     task={selectedTask}
                     visible={!!selectedTask}
                     onClose={() => setSelectedTask(null)}
+                    onFinishTask={handleFinishTask}
                 />
             )}
 

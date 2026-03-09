@@ -50,9 +50,13 @@ interface TaskDetailSheetProps {
     distanceKm?: number | null;
     /** Called when the owner deletes the task. Sheet closes automatically. */
     onDelete?: (taskId: string) => Promise<void>;
+    /** Called when tasker marks task finished */
+    onFinishTask?: (taskId: string) => Promise<void>;
+    /** Called when poster confirms completion */
+    onConfirmCompletion?: (taskId: string) => Promise<void>;
 }
 
-export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }: TaskDetailSheetProps) {
+export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, onFinishTask, onConfirmCompletion }: TaskDetailSheetProps) {
     const { colors } = useTheme();
     const { user } = useAuth();
     const { applyForTask, withdrawApplication, getMyApplicationStatus } =
@@ -67,8 +71,10 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }
     const [showMessageInput, setShowMessageInput] = useState(false);
     const [applyMessage, setApplyMessage] = useState('');
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [completionLoading, setCompletionLoading] = useState(false);
 
     const isOwnTask = user?.id === task.created_by;
+    const isAssignedTasker = user?.id === task.assigned_to;
 
     // Fetch application status on mount
     const fetchStatus = useCallback(async () => {
@@ -206,6 +212,8 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }
                 return 'Assigned';
             case 'in-progress':
                 return 'In Progress';
+            case 'pending_confirmation':
+                return 'Pending Confirmation';
             case 'completed':
                 return 'Completed';
             case 'cancelled':
@@ -221,6 +229,8 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }
                 return colors.statusOrange;
             case 'in-progress':
                 return colors.statusOrange;
+            case 'pending_confirmation':
+                return colors.statusOrange;
             case 'completed':
                 return colors.textMuted;
             case 'cancelled':
@@ -230,7 +240,100 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }
 
     // Determine footer button state
     const renderFooterButton = () => {
+        // ── Assigned tasker: Finish Task / Already Finished ──
+        if (isAssignedTasker && ['assigned', 'in-progress', 'pending_confirmation'].includes(task.status)) {
+            if (task.tasker_completed) {
+                return (
+                    <View style={[styles.applyButton, { backgroundColor: colors.statusOrange + '20' }]}>
+                        <Ionicons name="hourglass-outline" size={18} color={colors.statusOrange} />
+                        <Text style={[styles.applyText, { color: colors.statusOrange, fontFamily: FontFamily.bold, marginLeft: 8 }]}>
+                            Waiting for Poster Confirmation
+                        </Text>
+                    </View>
+                );
+            }
+            return (
+                <Pressable
+                    style={[styles.applyButton, { backgroundColor: colors.statusGreen }]}
+                    onPress={() => {
+                        Alert.alert(
+                            'Finish Task',
+                            'Mark this task as finished? The poster will need to confirm completion.',
+                            [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                    text: 'Finish',
+                                    onPress: async () => {
+                                        if (!onFinishTask) return;
+                                        setCompletionLoading(true);
+                                        try {
+                                            await onFinishTask(task.id);
+                                        } catch (err: any) {
+                                            Alert.alert('Error', err.message || 'Failed to finish task');
+                                        } finally {
+                                            setCompletionLoading(false);
+                                        }
+                                    },
+                                },
+                            ]
+                        );
+                    }}
+                    disabled={completionLoading}
+                >
+                    {completionLoading ? (
+                        <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                        <Text style={[styles.applyText, { fontFamily: FontFamily.bold }]}>
+                            Finish Task
+                        </Text>
+                    )}
+                </Pressable>
+            );
+        }
+
+        // ── Own task: poster actions ──
         if (isOwnTask) {
+            // Poster can confirm completion if tasker finished
+            if (['assigned', 'in-progress', 'pending_confirmation'].includes(task.status) && task.tasker_completed && !task.poster_confirmed) {
+                return (
+                    <Pressable
+                        style={[styles.applyButton, { backgroundColor: colors.statusGreen }]}
+                        onPress={() => {
+                            Alert.alert(
+                                'Confirm Completion',
+                                'Confirm that this task has been completed successfully?',
+                                [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                        text: 'Confirm',
+                                        onPress: async () => {
+                                            if (!onConfirmCompletion) return;
+                                            setCompletionLoading(true);
+                                            try {
+                                                await onConfirmCompletion(task.id);
+                                            } catch (err: any) {
+                                                Alert.alert('Error', err.message || 'Failed to confirm');
+                                            } finally {
+                                                setCompletionLoading(false);
+                                            }
+                                        },
+                                    },
+                                ]
+                            );
+                        }}
+                        disabled={completionLoading}
+                    >
+                        {completionLoading ? (
+                            <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                            <Text style={[styles.applyText, { fontFamily: FontFamily.bold }]}>
+                                Confirm Completion
+                            </Text>
+                        )}
+                    </Pressable>
+                );
+            }
+
             return (
                 <View style={styles.ownPostFooter}>
                     <View
@@ -249,7 +352,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete }
                             Your Post
                         </Text>
                     </View>
-                    {onDelete && (
+                    {onDelete && task.status === 'open' && (
                         <Pressable
                             style={[
                                 styles.deleteButton,

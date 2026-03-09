@@ -399,3 +399,168 @@ export function useRejectApplicantMutation(posterId: string | undefined) {
         },
     });
 }
+
+// ── Chat Mutations ─────────────────────────────────────────────
+
+/** Send a message via the `send_message` RPC. */
+async function sendMessageFn({
+    roomId,
+    senderId,
+    message,
+}: {
+    roomId: string;
+    senderId: string;
+    message: string;
+}) {
+    const { data, error } = await supabase.rpc('send_message', {
+        p_room_id: roomId,
+        p_sender_id: senderId,
+        p_message: message,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string; message_id?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to send message');
+    return result;
+}
+
+/** Mutation hook to send a chat message. Invalidates messages + room list. */
+export function useSendMessageMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: ({ roomId, message }: { roomId: string; message: string }) =>
+            sendMessageFn({ roomId, senderId: userId!, message }),
+        onSuccess: (_data, { roomId }) => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.messages(roomId),
+            });
+            if (userId) {
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.chat.rooms(userId),
+                });
+            }
+        },
+    });
+}
+
+/** Mark all unread messages in a room as seen. */
+async function markMessagesSeenFn({ roomId, userId }: { roomId: string; userId: string }) {
+    await supabase.rpc('mark_messages_seen', {
+        p_room_id: roomId,
+        p_user_id: userId,
+    });
+}
+
+export function useMarkMessagesSeenMutation() {
+    return useMutation({
+        mutationFn: markMessagesSeenFn,
+    });
+}
+
+// ── Task Completion Mutations ──────────────────────────────────
+
+/** Tasker marks task as finished via `finish_task` RPC. */
+async function finishTaskFn({ taskId, taskerId }: { taskId: string; taskerId: string }) {
+    const { data, error } = await supabase.rpc('finish_task', {
+        p_task_id: taskId,
+        p_tasker_id: taskerId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to finish task');
+    return result;
+}
+
+/** Mutation hook for the tasker to mark a task as finished. */
+export function useFinishTaskMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: ({ taskId }: { taskId: string }) =>
+            finishTaskFn({ taskId, taskerId: userId! }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+        },
+    });
+}
+
+/** Poster confirms task completion via `confirm_task_completion` RPC. */
+async function confirmTaskCompletionFn({ taskId, posterId }: { taskId: string; posterId: string }) {
+    const { data, error } = await supabase.rpc('confirm_task_completion', {
+        p_task_id: taskId,
+        p_poster_id: posterId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to confirm completion');
+    return result;
+}
+
+/** Mutation hook for the poster to confirm task completion. */
+export function useConfirmTaskCompletionMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: ({ taskId }: { taskId: string }) =>
+            confirmTaskCompletionFn({ taskId, posterId: userId! }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+        },
+    });
+}
+
+// ── Notification Mutations ─────────────────────────────────────
+
+/** Mark a single notification as read via RPC. */
+async function markNotificationReadFn({
+    notificationId,
+    userId,
+}: {
+    notificationId: string;
+    userId: string;
+}) {
+    const { data, error } = await supabase.rpc('mark_notification_read', {
+        p_notification_id: notificationId,
+        p_user_id: userId,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+}
+
+/** Mutation hook to mark a single notification as read. */
+export function useMarkNotificationReadMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: ({ notificationId }: { notificationId: string }) =>
+            markNotificationReadFn({ notificationId, userId: userId! }),
+        onSuccess: () => {
+            if (userId) {
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.notifications.list(userId),
+                });
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.notifications.unreadCount(userId),
+                });
+            }
+        },
+    });
+}
+
+/** Mark all notifications as read via RPC. */
+async function markAllNotificationsReadFn(userId: string) {
+    const { data, error } = await supabase.rpc('mark_all_notifications_read', {
+        p_user_id: userId,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+}
+
+/** Mutation hook to mark all notifications as read. */
+export function useMarkAllNotificationsReadMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: () => markAllNotificationsReadFn(userId!),
+        onSuccess: () => {
+            if (userId) {
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.notifications.list(userId),
+                });
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.notifications.unreadCount(userId),
+                });
+            }
+        },
+    });
+}

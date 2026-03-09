@@ -37,7 +37,9 @@ export interface Task {
     latitude: number | null;
     longitude: number | null;
     assigned_to: string | null;
-    status: 'open' | 'assigned' | 'in-progress' | 'completed' | 'cancelled';
+    status: 'open' | 'assigned' | 'in-progress' | 'pending_confirmation' | 'completed' | 'cancelled';
+    tasker_completed: boolean;
+    poster_confirmed: boolean;
     created_at: string;
     updated_at: string;
     // Joined fields (populated by queries)
@@ -161,7 +163,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
             tasks.filter(
                 (t) =>
                     t.assigned_to === userId &&
-                    ['assigned', 'in-progress', 'completed'].includes(t.status)
+                    ['assigned', 'in-progress', 'completed', 'pending_confirmation'].includes(t.status)
             ),
         [tasks]
     );
