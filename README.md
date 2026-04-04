@@ -1,50 +1,65 @@
-# Welcome to your Expo app 👋
+# Chhehchhawl 🤝
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Chhehchhawl** is a modern, peer-to-peer task marketplace designed to bridge the gap between people who need help and those who want to earn. Built with a focus on ease of use, fluid animations, and a sleek dark-mode-first aesthetic, it's more than just an app—it's a community helper in your pocket.
 
-## Get started
+---
 
-1. Install dependencies
+## ✨ What is Chhehchhawl about?
 
-   ```bash
-   npm install
-   ```
+The name "Chhehchhawl" resonates with the Mizo spirit of helping one another. In our busy lives, we often find ourselves with tasks we can't quite get to, or we have specialized skills and extra time we'd like to put to good use.
 
-2. Start the app
+Whether it’s delivering a package, fixing a leaky faucet, or helping with a digital task, Chhehchhawl provides a platform where:
+- **Posters** can get things done quickly by offering a reward.
+- **Taskers** can find local or remote opportunities to earn money on their own schedule.
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## 🚀 How it Works
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+We’ve kept the workflow intentionally simple and friction-free:
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+1.  **Post a Task**: Got something that needs doing? Tap the "Create Task" button, describe what you need, and set a reward amount.
+2.  **Browse & Apply**: If you're looking to help, browse the home feed. See a task that fits your skills? Just hit "Apply."
+3.  **Chat & Connect**: Once a Poster accepts an application, a private, real-time chat opens up. You can discuss details, share locations, and get the job started.
+4.  **Finish & Confirm**: When the task is done, the Tasker marks it as finished. The Poster confirms, and the cycle is complete.
 
-## Get a fresh project
+---
 
-When you're ready, run:
+## 🛠️ Built With
 
-```bash
-npm run reset-project
-```
+Chhehchhawl is crafted using a modern tech stack for a premium feel:
+- **Frontend**: [React Native](https://reactnative.dev/) with [Expo](https://expo.dev/) (using Expo Router for seamless navigation).
+- **Backend / Real-time**: [Supabase](https://supabase.com/) for reliable data management and instant messaging.
+- **Animations**: [React Native Reanimated](https://docs.swmansion.com/react-native-reanimated/) for those buttery-smooth transitions.
+- **Styling**: A custom, dark-mode-optimized design system.
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 💡 Why use it?
 
-To learn more about developing your project with Expo, look at the following resources:
+- **For the User**: It saves you time. Instead of hunting for services, you post once and let the help come to you.
+- **For the Earner**: It's flexible work. You choose what you do, when you do it, and how much you earn.
+- **For the Community**: it fosters a culture of mutual support and local empowerment.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 🛠️ Getting Started (Development)
 
-Join our community of developers creating universal apps.
+1.  **Clone the repo**:
+    ```bash
+    git clone https://github.com/JoelLalrinhlua/Chhehchhawl.git
+    cd Chhehchhawl
+    ```
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+3.  **Setup environment**: Create a `.env` file with your Supabase credentials.
+4.  **Run the app**:
+    ```bash
+    npx expo start
+    ```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+*Made with love for the community.*
