@@ -25,6 +25,24 @@ We’ve kept the workflow intentionally simple and friction-free:
 
 ---
 
+## 🌟 What makes Chhehchhawl Different?
+
+Most gig-economy apps put you in one box: you’re either the "customer" or the "worker." Chhehchhawl is different. 
+
+### 🔄 You are both the Poster and the Tasker
+There are no separate roles. One day you’re overwhelmed and need someone to pick up your laundry; the next day, you’ve got some free time and want to help someone move their sofa. On Chhehchhawl, it’s all in one place. Your profile is your reputation, regardless of whether you're giving help or receiving it.
+
+### 🎓 Empowering the Student & the Hustler
+We know life is expensive. For college students with tight schedules or anyone struggling to find traditional employment, Chhehchhawl is an easy way to turn skills and spare time into real reward.
+- **Struggling to find a part-time job?** Browse the feed and pick up tasks that fit your hours.
+- **Need extra cash for books or rent?** Help a neighbor and get paid directly.
+- **No rigid commitments.** Work when you can, skip it when you can’t. 
+
+It’s local, it’s fast, and it’s built by the community, for the community.
+
+
+---
+
 ## 🛠️ Built With
 
 Chhehchhawl is crafted using a modern tech stack for a premium feel:
