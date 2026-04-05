@@ -981,16 +981,16 @@ export default function CreateTaskScreen() {
                             <Text style={[styles.continueText, { fontFamily: FontFamily.bold }]}>Continue</Text>
                         </Pressable>
                     ) : (
-                        <Animated.View style={submitAnimatedStyle}>
+                        <Animated.View style={[submitAnimatedStyle, { flex: 2 }]}>
                             <Pressable
-                                style={[styles.continueButton, { backgroundColor: isFormValid ? colors.accent : colors.border }]}
+                                style={[styles.continueButton, { backgroundColor: isFormValid ? colors.accent : colors.border, flex: 1 }]}
                                 onPress={handleSubmitPress}
                                 disabled={loading || !isFormValid}
                             >
                                 {loading ? (
                                     <ActivityIndicator color="#FFF" />
                                 ) : (
-                                    <Text style={[styles.continueText, { fontFamily: FontFamily.bold }]}>Submit</Text>
+                                    <Text style={[styles.continueText, { fontFamily: FontFamily.bold }]}>Submit Task</Text>
                                 )}
                             </Pressable>
                         </Animated.View>
@@ -1325,7 +1325,7 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.md,
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: 48,
+        minHeight: 52,
     },
     continueText: {
         color: '#FFFFFF',

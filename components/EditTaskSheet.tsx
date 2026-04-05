@@ -68,7 +68,7 @@ export function EditTaskSheet({ task, visible, onClose }: EditTaskSheetProps) {
         <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
                 <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-                    <Animated.View entering={ZoomIn.duration(200).springify()} exiting={ZoomOut.duration(200)} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Animated.View entering={ZoomIn.duration(220)} exiting={ZoomOut.duration(160)} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         
                         <View style={styles.header}>
                             <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Task</Text>

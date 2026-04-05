@@ -11,10 +11,12 @@
  */
 
 import { AnimatedInput } from '@/components/AnimatedInput';
+import { CustomAlert } from '@/components/CustomAlert';
 import { getDistrictsForState, getStateNames } from '@/constants/indian-locations';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import { useUsernameCheck } from '@/hooks/use-profile-queries';
 import { isValidDateOfBirth, normalizePhone } from '@/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,7 +25,6 @@ import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Dimensions,
     FlatList,
     KeyboardAvoidingView,
@@ -50,24 +51,15 @@ const TOTAL_STEPS = 3;
 export default function CompleteProfileScreen() {
     const { user, updateProfile, signOut } = useAuth();
     const { colors } = useTheme();
+    const { showToast } = useToast();
 
     const [currentStep, setCurrentStep] = useState(1);
     const [error, setError] = useState<string | null>(null);
+    const [cancelAlertVisible, setCancelAlertVisible] = useState(false);
 
     // ── Cancel / Sign Out handler ──
     const handleCancelSetup = () => {
-        Alert.alert(
-            'Cancel Setup',
-            'This will sign you out. You can sign in again later to complete your profile.',
-            [
-                { text: 'Continue Setup', style: 'cancel' },
-                {
-                    text: 'Sign Out',
-                    style: 'destructive',
-                    onPress: async () => { await signOut(); },
-                },
-            ],
-        );
+        setCancelAlertVisible(true);
     };
 
     // ── Step 1: Basic Info ──
@@ -121,10 +113,7 @@ export default function CompleteProfileScreen() {
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert(
-                    'Permission Required',
-                    'Location permission is needed to detect your area. Please select your state and district manually.',
-                );
+                showToast('Location permission needed. Please select your state and district manually.', 'warning');
                 setLocationLoading(false);
                 return;
             }
@@ -154,7 +143,7 @@ export default function CompleteProfileScreen() {
                 }
             } catch { /* ignore reverse geocode errors */ }
         } catch {
-            Alert.alert('Location Error', 'Could not get your location. Please select your state and district manually.');
+            showToast('Could not get your location. Select your state and district manually.', 'warning');
         }
         setLocationLoading(false);
     }, []);
@@ -794,6 +783,23 @@ export default function CompleteProfileScreen() {
                     </TouchableOpacity>
                 )}
             </View>
+
+            {/* Cancel setup confirmation */}
+            <CustomAlert
+                visible={cancelAlertVisible}
+                title="Cancel Setup"
+                message="This will sign you out. You can sign in again later to complete your profile."
+                variant="destructive"
+                buttons={[
+                    { text: 'Continue Setup', style: 'cancel' },
+                    {
+                        text: 'Sign Out',
+                        style: 'destructive',
+                        onPress: async () => { await signOut(); },
+                    },
+                ]}
+                onDismiss={() => setCancelAlertVisible(false)}
+            />
         </KeyboardAvoidingView>
     );
 }

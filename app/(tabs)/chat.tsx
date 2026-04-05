@@ -12,9 +12,11 @@
  */
 
 import { ChatRoomSheet } from '@/components/ChatRoomSheet';
+import { CustomAlert, type AlertButton } from '@/components/CustomAlert';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import { useChatRoomsQuery, type ChatRoom } from '@/hooks/use-chat-queries';
 import { useDeleteChatRoomMutation } from '@/hooks/use-mutations';
 import { queryClient } from '@/lib/query-client';
@@ -23,7 +25,6 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    Alert,
     ActivityIndicator,
     FlatList,
     Image,
@@ -41,10 +42,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function ChatScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
+    const { showToast } = useToast();
     const [search, setSearch] = useState('');
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
     const [completedExpanded, setCompletedExpanded] = useState(false);
     const chevronRotation = useState(new Animated.Value(0))[0];
+    const [deleteAlertConfig, setDeleteAlertConfig] = useState<{
+        visible: boolean; title: string; message: string; buttons: AlertButton[];
+    }>({ visible: false, title: '', message: '', buttons: [] });
+    const closeDeleteAlert = () => setDeleteAlertConfig((p) => ({ ...p, visible: false }));
 
     const { data: rooms = [], isLoading, refetch } = useChatRoomsQuery(user?.id);
     const deleteMutation = useDeleteChatRoomMutation(user?.id);
@@ -179,10 +185,11 @@ export default function ChatScreen() {
 
     const handleLongPressCompleted = useCallback(
         (item: ChatRoom) => {
-            Alert.alert(
-                'Delete Chat',
-                `Delete this conversation with ${item.other_user_name ?? 'Unknown'}?\n\nThis will only remove the chat from your list — the task history is preserved.`,
-                [
+            setDeleteAlertConfig({
+                visible: true,
+                title: 'Delete Chat',
+                message: `Delete your conversation with ${item.other_user_name ?? 'Unknown'}?\n\nThis only removes it from your list — task history is preserved.`,
+                buttons: [
                     { text: 'Cancel', style: 'cancel' },
                     {
                         text: 'Delete',
@@ -191,12 +198,12 @@ export default function ChatScreen() {
                             try {
                                 await deleteMutation.mutateAsync({ roomId: item.room_id });
                             } catch (err: any) {
-                                Alert.alert('Error', err.message || 'Failed to delete chat');
+                                showToast(err.message || 'Failed to delete chat', 'error');
                             }
                         },
                     },
-                ]
-            );
+                ],
+            });
         },
         [deleteMutation]
     );
@@ -479,6 +486,8 @@ export default function ChatScreen() {
                     posterConfirmed={selectedRoom.poster_confirmed}
                     posterId={selectedRoom.poster_id}
                     taskerId={selectedRoom.tasker_id}
+                    taskBudget={selectedRoom.task_budget ?? 0}
+                    taskerUpiId={selectedRoom.tasker_upi_id ?? null}
                     visible={!!selectedRoom}
                     onClose={handleCloseRoom}
                 />
@@ -491,6 +500,16 @@ export default function ChatScreen() {
                     </View>
                 </Modal>
             )}
+
+            {/* Delete chat confirmation */}
+            <CustomAlert
+                visible={deleteAlertConfig.visible}
+                title={deleteAlertConfig.title}
+                message={deleteAlertConfig.message}
+                variant="destructive"
+                buttons={deleteAlertConfig.buttons}
+                onDismiss={closeDeleteAlert}
+            />
         </SafeAreaView>
     );
 }

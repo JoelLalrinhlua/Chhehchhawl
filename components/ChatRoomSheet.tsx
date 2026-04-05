@@ -14,11 +14,13 @@
  *  • Task detail access via header button
  */
 
+import { CustomAlert, type AlertButton } from '@/components/CustomAlert';
 import { TaskDetailSheet } from '@/components/TaskDetailSheet';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTasks, type Task } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import {
     useChatMessagesQuery,
     useLiveLocationSessionQuery,
@@ -29,9 +31,10 @@ import {
     type LiveLocationSession,
 } from '@/hooks/use-chat-queries';
 import {
-    useConfirmTaskCompletionMutation,
+    useConfirmPaymentReceivedMutation,
     useFinishTaskMutation,
     useMarkMessagesSeenMutation,
+    useMarkPaymentSentMutation,
     useOfferLiveLocationMutation,
     useRequestLiveLocationMutation,
     useRespondLiveLocationMutation,
@@ -48,7 +51,6 @@ import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Animated,
     Dimensions,
     FlatList,
@@ -90,6 +92,8 @@ interface ChatRoomSheetProps {
     posterConfirmed: boolean;
     posterId: string;
     taskerId: string;
+    taskBudget: number;
+    taskerUpiId: string | null;
     visible: boolean;
     onClose: () => void;
 }
@@ -104,12 +108,15 @@ export function ChatRoomSheet({
     posterConfirmed,
     posterId,
     taskerId,
+    taskBudget,
+    taskerUpiId,
     visible,
     onClose,
 }: ChatRoomSheetProps) {
     const { colors } = useTheme();
     const { user } = useAuth();
     const { tasks } = useTasks();
+    const { showToast } = useToast();
     const insets = useSafeAreaInsets();
     const [messageText, setMessageText] = useState('');
     const [completionLoading, setCompletionLoading] = useState(false);
@@ -121,6 +128,13 @@ export function ChatRoomSheet({
     const [showLiveMap, setShowLiveMap] = useState(false);
     const [mapPickerVisible, setMapPickerVisible] = useState(false);
     const [pickedLocation, setPickedLocation] = useState<{lat: number, lng: number} | null>(null);
+    // Custom alert state
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean; title: string; message: string;
+        variant: 'confirm' | 'payment' | 'error' | 'info' | 'destructive';
+        buttons: AlertButton[];
+    }>({ visible: false, title: '', message: '', variant: 'confirm', buttons: [] });
+    const closeAlert = () => setAlertConfig((p) => ({ ...p, visible: false }));
     const attachMenuAnim = useRef(new Animated.Value(0)).current;
     const flatListRef = useRef<FlatList<ChatMessage>>(null);
     const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
@@ -130,7 +144,8 @@ export function ChatRoomSheet({
     const sendMutation = useSendMessageMutation(user?.id);
     const markSeenMutation = useMarkMessagesSeenMutation();
     const finishMutation = useFinishTaskMutation(user?.id);
-    const confirmMutation = useConfirmTaskCompletionMutation(user?.id);
+    const markPaymentSentMutation = useMarkPaymentSentMutation(user?.id);
+    const confirmPaymentMutation = useConfirmPaymentReceivedMutation(user?.id);
     const requestLocationMutation = useRequestLiveLocationMutation(user?.id);
     const offerLocationMutation = useOfferLiveLocationMutation(user?.id);
     const respondLocationMutation = useRespondLiveLocationMutation(roomId);
@@ -141,6 +156,8 @@ export function ChatRoomSheet({
     const isPoster = user?.id === posterId;
     const isChatLocked = taskStatus === 'completed';
     const otherUserId = isTasker ? posterId : taskerId;
+    const isPaymentPending = taskStatus === 'payment_pending';
+    const isPaymentSent = taskStatus === 'payment_sent';
 
     const fullTask = useMemo(
         () => tasks.find((t) => t.id === taskId),
@@ -244,7 +261,7 @@ export function ChatRoomSheet({
         (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission Denied', 'Location permission is required to share your location.');
+                showToast('Location permission is required to share your location.', 'warning');
                 return;
             }
 
@@ -286,7 +303,7 @@ export function ChatRoomSheet({
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission Needed', 'Please allow access to your photos to send images.');
+                showToast('Please allow access to your photos to send images.', 'warning');
                 return;
             }
 
@@ -302,7 +319,7 @@ export function ChatRoomSheet({
             const asset = result.assets[0];
 
             if (!asset.base64) {
-                Alert.alert('Error', 'Could not read image data. Please try again.');
+                showToast('Could not read image data. Please try again.', 'error');
                 return;
             }
 
@@ -311,10 +328,7 @@ export function ChatRoomSheet({
             // Check size from base64 length (base64 is ~33% larger than binary)
             const estimatedSize = Math.ceil(asset.base64.length * 0.75);
             if (estimatedSize > MAX_IMAGE_SIZE) {
-                Alert.alert(
-                    'Image Too Large',
-                    'This image exceeds the 10MB limit. Please choose a smaller image.',
-                );
+                showToast('Image exceeds the 10MB limit. Please choose a smaller one.', 'warning');
                 setUploadingImage(false);
                 return;
             }
@@ -352,55 +366,19 @@ export function ChatRoomSheet({
                 },
             });
         } catch (err: any) {
-            Alert.alert('Upload Failed', err.message || 'Failed to send photo. Please try again.');
+            showToast(err.message || 'Failed to send photo. Please try again.', 'error');
         } finally {
             setUploadingImage(false);
         }
     }, [roomId, sendMutation]);
 
-    // ── Share current location (one-time) ──
-    const handleShareLocationPrompt = useCallback(() => {
-        setAttachMenuVisible(false);
-        if (!WebView) {
-            handleShareLocation();
-            return;
-        }
-
-        Alert.alert(
-            'Share Location',
-            'How would you like to share your location?',
-            [
-                { text: 'Send Current Location', onPress: () => handleShareLocation() },
-                { text: 'Choose on Map', onPress: async () => {
-                    // Pre-fetch rough location to center map
-                    const { status } = await Location.requestForegroundPermissionsAsync();
-                    if (status === 'granted') {
-                        try {
-                            const loc = await Location.getLastKnownPositionAsync();
-                            if (loc) {
-                                setPickedLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-                            } else {
-                                setPickedLocation({ lat: 23.7271, lng: 92.7176 });
-                            }
-                        } catch (e) {
-                            setPickedLocation({ lat: 23.7271, lng: 92.7176 });
-                        }
-                    } else {
-                        setPickedLocation({ lat: 23.7271, lng: 92.7176 });
-                    }
-                    setMapPickerVisible(true);
-                }},
-                { text: 'Cancel', style: 'cancel' }
-            ]
-        );
-    }, []);
-
+    // ── Share location (one-time, sending coords) ──
     const handleShareLocation = useCallback(async (forcedLocation?: {lat: number, lng: number}) => {
         setAttachMenuVisible(false);
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission Needed', 'Location permission is required to share your location.');
+                showToast('Location permission is required to share your location.', 'warning');
                 return;
             }
 
@@ -430,9 +408,47 @@ export function ChatRoomSheet({
                 },
             });
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to share location.');
+            showToast(err.message || 'Failed to share location.', 'error');
         }
     }, [roomId, sendMutation]);
+
+    // ── Share location prompt (picker or current) ──
+    const handleShareLocationPrompt = useCallback(() => {
+        setAttachMenuVisible(false);
+        if (!WebView) {
+            handleShareLocation();
+            return;
+        }
+
+        setAlertConfig({
+            visible: true,
+            title: 'Share Location',
+            message: 'How would you like to share your location?',
+            variant: 'info',
+            buttons: [
+                { text: 'Current Location', style: 'default', onPress: () => handleShareLocation() },
+                { text: 'Choose on Map', style: 'default', onPress: async () => {
+                    const { status } = await Location.requestForegroundPermissionsAsync();
+                    if (status === 'granted') {
+                        try {
+                            const loc = await Location.getLastKnownPositionAsync();
+                            if (loc) {
+                                setPickedLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+                            } else {
+                                setPickedLocation({ lat: 23.7271, lng: 92.7176 });
+                            }
+                        } catch (e) {
+                            setPickedLocation({ lat: 23.7271, lng: 92.7176 });
+                        }
+                    } else {
+                        setPickedLocation({ lat: 23.7271, lng: 92.7176 });
+                    }
+                    setMapPickerVisible(true);
+                }},
+                { text: 'Cancel', style: 'cancel' },
+            ],
+        });
+    }, [handleShareLocation]);
 
     // ── Request live location ──
     const handleRequestLiveLocation = useCallback(async () => {
@@ -451,7 +467,7 @@ export function ChatRoomSheet({
                 metadata: { session_id: result.session_id! },
             });
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to request live location.');
+            showToast(err.message || 'Failed to request live location.', 'error');
         }
     }, [roomId, otherUserId, requestLocationMutation, sendMutation, isTasker]);
 
@@ -472,7 +488,7 @@ export function ChatRoomSheet({
                 metadata: { session_id: result.session_id! },
             });
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to offer live location.');
+            showToast(err.message || 'Failed to offer live location.', 'error');
         }
     }, [roomId, otherUserId, offerLocationMutation, sendMutation, isTasker]);
 
@@ -491,7 +507,7 @@ export function ChatRoomSheet({
                 metadata: { session_id: sessionId, status: accept ? 'accepted' : 'denied' },
             });
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to respond.');
+            showToast(err.message || 'Failed to respond.', 'error');
         }
     }, [roomId, respondLocationMutation, sendMutation]);
 
@@ -509,50 +525,144 @@ export function ChatRoomSheet({
                 messageType: 'system',
             });
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to stop.');
+            showToast(err.message || 'Failed to stop.', 'error');
         }
     }, [liveSession, stopLocationMutation, sendMutation, roomId]);
 
-    // ── Completion handlers ──
+    // ── Payment-driven completion handlers ──
+    // Step 1: Tasker marks task as complete → sends payment_request system message into chat
     const handleFinishTask = useCallback(() => {
-        Alert.alert('Mark as Complete', 'Are you sure you want to mark this task as complete?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Complete',
-                onPress: async () => {
-                    setCompletionLoading(true);
-                    try {
-                        await finishMutation.mutateAsync({ taskId });
-                        if (user?.id) await queryClient.invalidateQueries({ queryKey: queryKeys.chat.rooms(user.id) });
-                    } catch (err: any) {
-                        Alert.alert('Error', err.message || 'Failed to mark complete');
-                    } finally {
-                        setCompletionLoading(false);
-                    }
+        setAlertConfig({
+            visible: true,
+            title: 'Mark as Complete',
+            message: `Have you finished this task?\n\nThe poster will be asked to pay ₹${taskBudget} via UPI.`,
+            variant: 'confirm',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Mark Complete',
+                    style: 'default',
+                    onPress: async () => {
+                        setCompletionLoading(true);
+                        try {
+                            const result = await finishMutation.mutateAsync({ taskId });
+                            const upiId = result.tasker_upi_id || taskerUpiId || '';
+                            const amount = result.amount ?? taskBudget ?? 0;
+                            await sendMutation.mutateAsync({
+                                roomId,
+                                message: `💳 Payment Required — ₹${amount}`,
+                                messageType: 'payment_request',
+                                metadata: { upi_id: upiId, amount, task_title: taskTitle },
+                            });
+                            showToast('Task marked complete! Awaiting payment.', 'success');
+                            if (user?.id) await queryClient.invalidateQueries({ queryKey: queryKeys.chat.rooms(user.id) });
+                        } catch (err: any) {
+                            showToast(err.message || 'Failed to mark complete', 'error');
+                        } finally {
+                            setCompletionLoading(false);
+                        }
+                    },
                 },
-            },
-        ]);
-    }, [taskId, finishMutation, user?.id]);
+            ],
+        });
+    }, [taskId, finishMutation, taskerUpiId, taskBudget, roomId, sendMutation, taskTitle, user?.id]);
 
-    const handleConfirmCompletion = useCallback(() => {
-        Alert.alert('Confirm Completion', 'Confirm that this task has been completed successfully?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Confirm',
-                onPress: async () => {
-                    setCompletionLoading(true);
-                    try {
-                        await confirmMutation.mutateAsync({ taskId });
-                        if (user?.id) await queryClient.invalidateQueries({ queryKey: queryKeys.chat.rooms(user.id) });
-                    } catch (err: any) {
-                        Alert.alert('Error', err.message || 'Failed to confirm');
-                    } finally {
-                        setCompletionLoading(false);
-                    }
+    // Step 2b: Poster marks payment as sent (can be called directly or after UPI app)
+    const handleMarkPaymentSent = useCallback(async () => {
+        setCompletionLoading(true);
+        try {
+            await markPaymentSentMutation.mutateAsync({ taskId });
+            await sendMutation.mutateAsync({
+                roomId,
+                message: '✅ Payment sent. Tasker, please confirm receipt.',
+                messageType: 'system',
+            });
+            showToast('Payment marked as sent!', 'success');
+            if (user?.id) await queryClient.invalidateQueries({ queryKey: queryKeys.chat.rooms(user.id) });
+        } catch (err: any) {
+            showToast(err.message || 'Failed to mark payment sent', 'error');
+        } finally {
+            setCompletionLoading(false);
+        }
+    }, [taskId, markPaymentSentMutation, sendMutation, roomId, user?.id]);
+
+    // Step 2: Poster opens UPI app then confirms payment sent
+    const handlePayNow = useCallback(() => {
+        const upi = taskerUpiId;
+        const amount = taskBudget;
+
+        if (!upi) {
+            showToast('Tasker has no UPI ID set. Contact them to pay manually.', 'warning');
+            return;
+        }
+
+        setAlertConfig({
+            visible: true,
+            title: 'Pay via UPI',
+            message: `Send ₹${amount} to:\n${upi}\n\nTap below to open your UPI app.`,
+            variant: 'payment',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Open UPI App',
+                    style: 'default',
+                    onPress: async () => {
+                        const upiUrl = `upi://pay?pa=${encodeURIComponent(upi)}&pn=Chhehchhawl&am=${amount}&cu=INR&tn=${encodeURIComponent(taskTitle)}`;
+                        try {
+                            const canOpen = await Linking.canOpenURL(upiUrl);
+                            await Linking.openURL(canOpen ? upiUrl : 'https://pay.google.com/');
+                        } catch {
+                            showToast('Could not open UPI app. Please pay manually.', 'warning');
+                            return;
+                        }
+                        // After returning from UPI, ask to confirm
+                        setTimeout(() => {
+                            setAlertConfig({
+                                visible: true,
+                                title: 'Payment Sent?',
+                                message: 'Did you successfully send the payment?',
+                                variant: 'confirm',
+                                buttons: [
+                                    { text: 'Not Yet', style: 'cancel' },
+                                    { text: 'Yes, Mark Sent', style: 'default', onPress: () => handleMarkPaymentSent() },
+                                ],
+                            });
+                        }, 2500);
+                    },
                 },
-            },
-        ]);
-    }, [taskId, confirmMutation, user?.id]);
+            ],
+        });
+    }, [taskerUpiId, taskBudget, taskTitle, handleMarkPaymentSent]);
+
+    // Step 3: Tasker confirms payment received → task becomes completed → chat closes
+    const handleConfirmPaymentReceived = useCallback(() => {
+        setAlertConfig({
+            visible: true,
+            title: 'Confirm Payment Received',
+            message: 'Have you received the payment? This will mark the task as Completed.',
+            variant: 'confirm',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Yes, Received',
+                    style: 'default',
+                    onPress: async () => {
+                        setCompletionLoading(true);
+                        try {
+                            await confirmPaymentMutation.mutateAsync({ taskId });
+                            showToast('Task completed! 🎉', 'success');
+                            if (user?.id) await queryClient.invalidateQueries({ queryKey: queryKeys.chat.rooms(user.id) });
+                            setTimeout(() => onClose(), 1200);
+                        } catch (err: any) {
+                            showToast(err.message || 'Failed to confirm payment', 'error');
+                        } finally {
+                            setCompletionLoading(false);
+                        }
+                    },
+                },
+            ],
+        });
+    }, [taskId, confirmPaymentMutation, user?.id, onClose]);
 
     const invertedMessages = [...messages].reverse();
 
@@ -561,6 +671,43 @@ export function ChatRoomSheet({
         ({ item }: { item: ChatMessage }) => {
             const isOwn = item.sender_id === user?.id;
             const type = item.message_type || 'text';
+
+            // Payment request card — centered, special card UI
+            if (type === 'payment_request') {
+                const meta = item.metadata as { upi_id?: string; amount?: number; task_title?: string } | null;
+                const upiId = meta?.upi_id || taskerUpiId || '—';
+                const amount = meta?.amount ?? taskBudget ?? 0;
+                return (
+                    <View style={styles.systemMsgRow}>
+                        <View style={[styles.paymentCard, { backgroundColor: colors.surface, borderColor: '#6C47FF' + '60' }]}>
+                            <View style={styles.paymentCardHeader}>
+                                <Ionicons name="wallet" size={18} color="#6C47FF" />
+                                <Text style={[styles.paymentCardTitle, { color: '#6C47FF', fontFamily: FontFamily.bold }]}>Payment Required</Text>
+                            </View>
+                            <View style={styles.paymentCardRow}>
+                                <Text style={[styles.paymentCardLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>Amount</Text>
+                                <Text style={[styles.paymentCardValue, { color: colors.text, fontFamily: FontFamily.bold }]}>₹{amount}</Text>
+                            </View>
+                            <View style={styles.paymentCardRow}>
+                                <Text style={[styles.paymentCardLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>UPI ID</Text>
+                                <Text style={[styles.paymentCardValue, { color: colors.text, fontFamily: FontFamily.medium }]}>{upiId}</Text>
+                            </View>
+                            {isPoster && isPaymentPending && (
+                                <Pressable
+                                    style={[styles.paymentCardBtn, { backgroundColor: '#6C47FF' }]}
+                                    onPress={handlePayNow}
+                                >
+                                    <Ionicons name="qr-code" size={14} color="#FFF" />
+                                    <Text style={[styles.paymentCardBtnText, { fontFamily: FontFamily.bold }]}>Pay Now</Text>
+                                </Pressable>
+                            )}
+                            <Text style={[styles.messageTime, { color: colors.textMuted, alignSelf: 'center', marginTop: 6 }]}>
+                                {formatTime(item.created_at)}
+                            </Text>
+                        </View>
+                    </View>
+                );
+            }
 
             // System messages — centered
             if (type === 'system' || type === 'location_request' || type === 'location_response' || type === 'location_offer') {
@@ -699,12 +846,14 @@ export function ChatRoomSheet({
                 </View>
             );
         },
-        [user?.id, colors, liveSession, handleRespondToRequest]
+        [user?.id, colors, liveSession, handleRespondToRequest, isPoster, isPaymentPending, handlePayNow, taskerUpiId, taskBudget]
     );
 
     // ── Status bar config ──
     const getStatusBarConfig = useCallback(() => {
         if (isChatLocked) return { label: 'Completed', color: colors.textMuted, icon: 'checkmark-circle' as const };
+        if (taskStatus === 'payment_sent') return { label: 'Payment Sent', color: colors.statusGreen, icon: 'card' as const };
+        if (taskStatus === 'payment_pending') return { label: 'Payment Pending', color: colors.statusOrange, icon: 'wallet' as const };
         if (taskStatus === 'pending_confirmation') return { label: 'Pending Confirmation', color: colors.statusOrange, icon: 'hourglass' as const };
         if (taskStatus === 'in-progress') return { label: 'In Progress', color: colors.statusOrange, icon: 'time' as const };
         if (taskStatus === 'assigned') return { label: 'Assigned', color: colors.statusGreen, icon: 'person' as const };
@@ -713,10 +862,12 @@ export function ChatRoomSheet({
 
     const statusBarConfig = getStatusBarConfig();
 
-    // ── Completion action button ──
+    // ── Completion action button (payment-driven flow) ──
     const renderCompletionAction = () => {
         if (isChatLocked) return null;
-        if (isTasker && !taskerCompleted) {
+
+        // Step 1: Tasker can mark task as done (only when in-progress or assigned)
+        if (isTasker && !taskerCompleted && (taskStatus === 'in-progress' || taskStatus === 'assigned')) {
             return (
                 <Pressable style={[styles.completionButton, { backgroundColor: colors.statusGreen }]} onPress={handleFinishTask} disabled={completionLoading}>
                     {completionLoading ? <ActivityIndicator size="small" color="#FFF" /> : (
@@ -728,26 +879,72 @@ export function ChatRoomSheet({
                 </Pressable>
             );
         }
-        if (isTasker && taskerCompleted && !posterConfirmed) {
+
+        // Step 2 (Poster): Pay Now button when payment is pending
+        if (isPoster && isPaymentPending) {
             return (
-                <View style={[styles.waitingBadge, { backgroundColor: colors.statusOrange + '15' }]}>
-                    <Ionicons name="hourglass-outline" size={14} color={colors.statusOrange} />
-                    <Text style={[styles.waitingText, { color: colors.statusOrange, fontFamily: FontFamily.medium }]}>Waiting for confirmation</Text>
+                <View style={styles.paymentActionRow}>
+                    <Pressable
+                        style={[styles.completionButton, { backgroundColor: '#6C47FF' }]}
+                        onPress={handlePayNow}
+                        disabled={completionLoading}
+                    >
+                        {completionLoading ? <ActivityIndicator size="small" color="#FFF" /> : (
+                            <>
+                                <Ionicons name="qr-code" size={16} color="#FFF" />
+                                <Text style={[styles.completionButtonText, { fontFamily: FontFamily.bold }]}>Pay Now</Text>
+                            </>
+                        )}
+                    </Pressable>
+                    <Pressable
+                        style={[styles.paidButton, { borderColor: colors.statusGreen }]}
+                        onPress={handleMarkPaymentSent}
+                        disabled={completionLoading}
+                    >
+                        <Text style={[styles.paidButtonText, { color: colors.statusGreen, fontFamily: FontFamily.medium }]}>Already Paid</Text>
+                    </Pressable>
                 </View>
             );
         }
-        if (isPoster && taskerCompleted && !posterConfirmed) {
+
+        // Step 2 (Tasker): Waiting for payment
+        if (isTasker && isPaymentPending) {
             return (
-                <Pressable style={[styles.completionButton, { backgroundColor: colors.statusGreen }]} onPress={handleConfirmCompletion} disabled={completionLoading}>
+                <View style={[styles.waitingBadge, { backgroundColor: colors.statusOrange + '15' }]}>
+                    <Ionicons name="hourglass-outline" size={14} color={colors.statusOrange} />
+                    <Text style={[styles.waitingText, { color: colors.statusOrange, fontFamily: FontFamily.medium }]}>Waiting for payment</Text>
+                </View>
+            );
+        }
+
+        // Step 3 (Tasker): Confirm payment received
+        if (isTasker && isPaymentSent) {
+            return (
+                <Pressable
+                    style={[styles.completionButton, { backgroundColor: colors.statusGreen }]}
+                    onPress={handleConfirmPaymentReceived}
+                    disabled={completionLoading}
+                >
                     {completionLoading ? <ActivityIndicator size="small" color="#FFF" /> : (
                         <>
                             <Ionicons name="shield-checkmark" size={16} color="#FFF" />
-                            <Text style={[styles.completionButtonText, { fontFamily: FontFamily.bold }]}>Confirm Completion</Text>
+                            <Text style={[styles.completionButtonText, { fontFamily: FontFamily.bold }]}>Confirm Payment Received</Text>
                         </>
                     )}
                 </Pressable>
             );
         }
+
+        // Step 3 (Poster): Waiting for tasker to confirm
+        if (isPoster && isPaymentSent) {
+            return (
+                <View style={[styles.waitingBadge, { backgroundColor: colors.statusGreen + '15' }]}>
+                    <Ionicons name="checkmark-circle-outline" size={14} color={colors.statusGreen} />
+                    <Text style={[styles.waitingText, { color: colors.statusGreen, fontFamily: FontFamily.medium }]}>Payment sent — awaiting confirmation</Text>
+                </View>
+            );
+        }
+
         return null;
     };
 
@@ -1014,6 +1211,18 @@ export function ChatRoomSheet({
                 </View>
             </Modal>
 
+            {/* Map picker Modal */}
+            {/* (above already closes map modal) */}
+
+            {/* Themed custom alert — rendered as independent Modal, so it overlays everything */}
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                variant={alertConfig.variant}
+                buttons={alertConfig.buttons}
+                onDismiss={closeAlert}
+            />
         </Modal>
     );
 }
@@ -1226,6 +1435,33 @@ const styles = StyleSheet.create({
         width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center',
     },
 
+    // Payment action row (Pay Now + Already Paid)
+    paymentActionRow: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    },
+    paidButton: {
+        paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, borderWidth: 1,
+    },
+    paidButtonText: {
+        fontSize: FontSize.sm,
+    },
+
+    // Payment card in chat
+    paymentCard: {
+        borderRadius: BorderRadius.lg, borderWidth: 1.5, padding: Spacing.md, minWidth: 240, maxWidth: '88%',
+        gap: Spacing.xs,
+    },
+    paymentCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.xs },
+    paymentCardTitle: { fontSize: FontSize.md },
+    paymentCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 },
+    paymentCardLabel: { fontSize: FontSize.sm },
+    paymentCardValue: { fontSize: FontSize.sm },
+    paymentCardBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+        marginTop: Spacing.sm, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md,
+    },
+    paymentCardBtnText: { color: '#FFF', fontSize: FontSize.sm },
+
     // Attachment menu
     attachOverlay: {
         ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end',
@@ -1254,6 +1490,7 @@ interface TaskerInfoModalProps {
 }
 
 function TaskerInfoModal({ visible, onClose, task, taskTitle, colors, insets }: TaskerInfoModalProps) {
+    const { showToast } = useToast();
     const handleOpenMaps = useCallback(() => {
         if (!task) return;
         if (task.latitude != null && task.longitude != null) {
@@ -1271,7 +1508,7 @@ function TaskerInfoModal({ visible, onClose, task, taskTitle, colors, insets }: 
             const q = encodeURIComponent(task.location);
             Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`);
         } else {
-            Alert.alert('No location', 'This task does not have a location set.');
+            showToast('This task does not have a location set.', 'info');
         }
     }, [task]);
 

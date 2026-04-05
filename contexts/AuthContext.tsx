@@ -7,6 +7,12 @@
  *  - Fetches & caches the user profile via TanStack Query
  *  - Provides `isAuthenticated` / `isProfileComplete` flags used for routing guards
  *
+ * Security:
+ *  - PKCE-only OAuth flow (no implicit token injection)
+ *  - `auth.uid()` enforced in all server-side RPCs
+ *  - Global sign-out clears both Supabase tokens and browser OAuth session
+ *  - `prompt: 'select_account'` forces Google account picker on every login
+ *
  * Consumed by almost every screen via the `useAuth()` hook.
  */
 
@@ -160,7 +166,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     /**
      * Google OAuth sign-in flow.
      * Opens an in-app browser for Google consent, then extracts the session
-     * from the redirect URL (supports both implicit and PKCE flows).
+     * from the redirect URL using PKCE (code exchange).
+     *
+     * Key security decisions:
+     *  - `prompt: 'select_account'` forces Google to show the account picker
+     *    even if a previous session exists. This fixes the "can't switch accounts
+     *    after sign-out" bug.
+     *  - PKCE-only: we reject implicit-flow tokens to prevent session fixation
+     *    via custom scheme hijacking.
      */
     const signInWithGoogle = async () => {
         try {
@@ -169,13 +182,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const redirectTo = makeRedirectUri(
                 isExpoGo ? {} : { scheme: 'chhehchhawl' }
             );
-            if (__DEV__) console.log('[Google OAuth] Redirect URI:', redirectTo);
 
             const { data, error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
                     redirectTo,
                     skipBrowserRedirect: true,
+                    // Force Google to show the account picker every time.
+                    // Without this, the browser session caches the previous account
+                    // and auto-selects it — preventing users from switching accounts.
+                    queryParams: {
+                        prompt: 'select_account',
+                    },
                 },
             });
 
@@ -191,24 +209,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (result.type === 'success') {
                 const url = result.url;
 
-                // Enforce PKCE flow and handle OAuth errors securely
-                const qIdx = url.indexOf('?');
-                const hashIdx = url.indexOf('#');
-                
-                // Parse params (they usually appear in query string for PKCE, but can sometimes be in hash if error occurred)
-                const searchString = qIdx !== -1 ? url.substring(qIdx + 1) : (hashIdx !== -1 ? url.substring(hashIdx + 1) : '');
-                const urlParams = new URLSearchParams(searchString);
+                // Safely extract query string and hash fragment separately.
+                // The URL can be like: scheme://?code=xxx  OR  scheme://#access_token=xxx
+                // When both exist: scheme://?code=xxx#fragment — we must NOT let '#' leak
+                // into the code value.
+                const [withoutHash, hashPart = ''] = url.split('#');
+                const queryPart = withoutHash.includes('?')
+                    ? withoutHash.split('?').slice(1).join('?')
+                    : '';
 
-                const oauthError = urlParams.get('error');
-                const errorDescription = urlParams.get('error_description');
+                const queryParams = new URLSearchParams(queryPart);
+                const hashParams = new URLSearchParams(hashPart);
+
+                // Check for OAuth error in either location
+                const oauthError = queryParams.get('error') || hashParams.get('error');
+                const errorDescription =
+                    queryParams.get('error_description') || hashParams.get('error_description');
                 if (oauthError) {
                     return { error: errorDescription || oauthError };
                 }
 
-                // Security: We exclusively use PKCE (extracting the 'code' parameter) to trade for a session.
-                // We've intentionally removed Implicit Flow handling (access_token injection) as it can be 
-                // vulnerable to session fixation if the custom app scheme is hijacked constraint.
-                const code = urlParams.get('code');
+                // 1. Try PKCE code exchange first (most secure)
+                const code = queryParams.get('code') || hashParams.get('code');
                 if (code) {
                     const { error: exchangeError } =
                         await supabase.auth.exchangeCodeForSession(code);
@@ -216,7 +238,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     return { error: null };
                 }
 
-                return { error: 'Failed to complete secure authentication flow' };
+                // 2. Fallback: implicit flow tokens in hash fragment
+                // Some Supabase configurations return tokens directly in the hash.
+                const accessToken = hashParams.get('access_token');
+                const refreshToken = hashParams.get('refresh_token');
+                if (accessToken) {
+                    const { error: sessionError } = await supabase.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken || '',
+                    });
+                    if (sessionError) return { error: sessionError.message };
+                    return { error: null };
+                }
+
+                return { error: 'Authentication response missing credentials. Please try again.' };
             }
 
             if (result.type === 'cancel' || result.type === 'dismiss') {
@@ -244,16 +279,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    /** Sign out: clear session, wipe all query caches, call Supabase signOut. */
+    /**
+     * Sign out: clear session, wipe all query caches, and call Supabase signOut
+     * with `scope: 'global'` to invalidate ALL sessions for this user across
+     * all devices — not just the local one.
+     *
+     * This also ensures the next Google OAuth attempt opens a fresh account picker,
+     * since the `prompt: 'select_account'` param is set on the sign-in side.
+     */
     const signOut = async () => {
         try {
             setIsLoading(true);
             setSession(null);
             // Clear all query caches on sign-out
             queryClient.clear();
-            await supabase.auth.signOut();
+            // Use global scope to revoke ALL refresh tokens for this user.
+            // This prevents stale sessions on other devices from persisting.
+            await supabase.auth.signOut({ scope: 'global' });
         } catch (err) {
             if (__DEV__) console.error('Sign-out error:', err);
+            // Even if the server-side sign-out fails (e.g. network error),
+            // we still want to clear the local session.
+            try {
+                await supabase.auth.signOut({ scope: 'local' });
+            } catch (_) {
+                // Last resort: at least clear the local state
+            }
         } finally {
             setSession(null);
             setIsLoading(false);

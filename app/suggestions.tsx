@@ -34,7 +34,6 @@ import Animated, {
     useAnimatedStyle,
     useSharedValue,
     withSequence,
-    withSpring,
     withTiming,
     ZoomIn,
 } from 'react-native-reanimated';
@@ -105,11 +104,11 @@ export default function SuggestionsScreen() {
             return;
         }
 
-        // Success animation
+        // Success animation — smooth scale pop, no bounce
         submitScale.value = withTiming(1, { duration: 80 });
         checkScale.value  = withSequence(
-            withSpring(1.2, { damping: 8, stiffness: 200 }),
-            withSpring(1,   { damping: 12, stiffness: 200 }),
+            withTiming(1.1, { duration: 180 }),
+            withTiming(1.0, { duration: 140 }),
         );
         setSubmitted(true);
     };

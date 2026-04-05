@@ -8,17 +8,18 @@
  * Dismissal uses a pan-down gesture on the handle.
  */
 
+import { CustomAlert, type AlertButton } from '@/components/CustomAlert';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import {
     useApplications,
     type TaskApplicant,
 } from '@/contexts/ApplicationContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Dimensions,
     FlatList,
     Pressable,
@@ -59,12 +60,22 @@ export function ApplicantListSheet({
     onStatusChange,
 }: ApplicantListSheetProps) {
     const { colors } = useTheme();
+    const { showToast } = useToast();
     const { getTaskApplicants, acceptApplicant, rejectApplicant } =
         useApplications();
     const [applicants, setApplicants] = useState<TaskApplicant[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const translateY = useSharedValue(0);
+    // Custom alert state
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        variant: 'confirm' | 'destructive';
+        buttons: AlertButton[];
+    }>({ visible: false, title: '', message: '', variant: 'confirm', buttons: [] });
+    const closeAlert = () => setAlertConfig((p) => ({ ...p, visible: false }));
 
     const fetchApplicants = useCallback(async () => {
         setLoading(true);
@@ -98,59 +109,60 @@ export function ApplicantListSheet({
     }));
 
     const handleAccept = (applicant: TaskApplicant) => {
-        Alert.alert(
-            'Accept Applicant',
-            `Accept ${applicant.full_name ?? applicant.username ?? 'this user'} for "${taskTitle}"?\n\nThis will assign the task and stop accepting new applications.`,
-            [
+        const name = applicant.full_name ?? applicant.username ?? 'this user';
+        setAlertConfig({
+            visible: true,
+            title: 'Accept Applicant',
+            message: `Accept ${name} for "${taskTitle}"?\n\nThis will assign the task and stop accepting new applications.`,
+            variant: 'confirm',
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Accept',
                     style: 'default',
                     onPress: async () => {
                         setActionLoading(applicant.applicant_id);
-                        const result = await acceptApplicant(
-                            taskId,
-                            applicant.applicant_id
-                        );
+                        const result = await acceptApplicant(taskId, applicant.applicant_id);
                         setActionLoading(null);
                         if (result.success) {
-                            Alert.alert('Done', 'Tasker accepted successfully!');
+                            showToast(`${name} accepted as tasker!`, 'success');
                             onStatusChange?.();
                             fetchApplicants();
                         } else {
-                            Alert.alert('Error', result.error ?? 'Failed to accept');
+                            showToast(result.error ?? 'Failed to accept', 'error');
                         }
                     },
                 },
-            ]
-        );
+            ],
+        });
     };
 
     const handleReject = (applicant: TaskApplicant) => {
-        Alert.alert(
-            'Reject Applicant',
-            `Reject ${applicant.full_name ?? applicant.username ?? 'this user'}?\n\nThis user will be permanently blocked from reapplying to this task.`,
-            [
+        const name = applicant.full_name ?? applicant.username ?? 'this user';
+        setAlertConfig({
+            visible: true,
+            title: 'Reject Applicant',
+            message: `Reject ${name}?\n\nThis user will be blocked from reapplying.`,
+            variant: 'destructive',
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Reject',
                     style: 'destructive',
                     onPress: async () => {
                         setActionLoading(applicant.applicant_id);
-                        const result = await rejectApplicant(
-                            taskId,
-                            applicant.applicant_id
-                        );
+                        const result = await rejectApplicant(taskId, applicant.applicant_id);
                         setActionLoading(null);
                         if (result.success) {
+                            showToast(`${name} rejected.`, 'warning');
                             fetchApplicants();
                         } else {
-                            Alert.alert('Error', result.error ?? 'Failed to reject');
+                            showToast(result.error ?? 'Failed to reject', 'error');
                         }
                     },
                 },
-            ]
-        );
+            ],
+        });
     };
 
     const renderApplicant = ({
@@ -342,50 +354,20 @@ export function ApplicantListSheet({
                     <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
 
                     {/* Header */}
-                    <View
-                        style={styles.sheetHeader}
-                    >
-                        <Text
-                            style={[
-                                styles.sheetTitle,
-                                { color: colors.text, fontFamily: FontFamily.bold },
-                            ]}
-                        >
+                    <View style={styles.sheetHeader}>
+                        <Text style={[styles.sheetTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
                             Applicants
                         </Text>
                         <Text
-                            style={[
-                                styles.sheetSubtitle,
-                                {
-                                    color: colors.textSecondary,
-                                    fontFamily: FontFamily.regular,
-                                },
-                            ]}
+                            style={[styles.sheetSubtitle, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}
                             numberOfLines={1}
                         >
                             {taskTitle}
                         </Text>
                         {taskStatus === 'assigned' && (
-                            <View
-                                style={[
-                                    styles.assignedBanner,
-                                    { backgroundColor: colors.statusGreen + '15' },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="checkmark-circle"
-                                    size={16}
-                                    color={colors.statusGreen}
-                                />
-                                <Text
-                                    style={[
-                                        styles.assignedBannerText,
-                                        {
-                                            color: colors.statusGreen,
-                                            fontFamily: FontFamily.medium,
-                                        },
-                                    ]}
-                                >
+                            <View style={[styles.assignedBanner, { backgroundColor: colors.statusGreen + '15' }]}>
+                                <Ionicons name="checkmark-circle" size={16} color={colors.statusGreen} />
+                                <Text style={[styles.assignedBannerText, { color: colors.statusGreen, fontFamily: FontFamily.medium }]}>
                                     Task has been assigned
                                 </Text>
                             </View>
@@ -399,20 +381,8 @@ export function ApplicantListSheet({
                         </View>
                     ) : applicants.length === 0 ? (
                         <View style={styles.emptyContainer}>
-                            <Ionicons
-                                name="people-outline"
-                                size={48}
-                                color={colors.textMuted}
-                            />
-                            <Text
-                                style={[
-                                    styles.emptyText,
-                                    {
-                                        color: colors.textMuted,
-                                        fontFamily: FontFamily.regular,
-                                    },
-                                ]}
-                            >
+                            <Ionicons name="people-outline" size={48} color={colors.textMuted} />
+                            <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
                                 No applicants yet
                             </Text>
                         </View>
@@ -423,14 +393,22 @@ export function ApplicantListSheet({
                             keyExtractor={(item) => item.application_id}
                             contentContainerStyle={styles.listContent}
                             showsVerticalScrollIndicator={false}
-                            ItemSeparatorComponent={() => (
-                                <View style={{ height: Spacing.sm }} />
-                            )}
+                            ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
                         />
                     )}
                 </Animated.View>
               </GestureDetector>
             </Animated.View>
+
+            {/* Themed confirmation dialog */}
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                variant={alertConfig.variant}
+                buttons={alertConfig.buttons}
+                onDismiss={closeAlert}
+            />
         </View>
     );
 }

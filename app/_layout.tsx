@@ -24,7 +24,9 @@ import { ApplicationProvider } from '@/contexts/ApplicationContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { TaskProvider } from '@/contexts/TaskContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { ToastProvider } from '@/contexts/ToastContext';
 import { queryClient } from '@/lib/query-client';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -120,17 +122,21 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <AuthProvider>
-            <TaskProvider>
-              <ApplicationProvider>
-                <RootNavigator />
-              </ApplicationProvider>
-            </TaskProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <ToastProvider>
+              <AuthProvider>
+                <TaskProvider>
+                  <ApplicationProvider>
+                    <RootNavigator />
+                  </ApplicationProvider>
+                </TaskProvider>
+              </AuthProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

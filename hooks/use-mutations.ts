@@ -625,16 +625,14 @@ export function useStopLiveLocationMutation(roomId: string) {
     });
 }
 
-// ── Task Completion Mutations ──────────────────────────────────
-
-/** Tasker marks task as finished via `finish_task` RPC. */
+/** Tasker marks task as finished via `finish_task` RPC. Returns tasker UPI + amount. */
 async function finishTaskFn({ taskId, taskerId }: { taskId: string; taskerId: string }) {
     const { data, error } = await supabase.rpc('finish_task', {
         p_task_id: taskId,
         p_tasker_id: taskerId,
     });
     if (error) throw new Error(error.message);
-    const result = data as { success: boolean; error?: string };
+    const result = data as { success: boolean; error?: string; tasker_upi_id?: string; amount?: number };
     if (!result.success) throw new Error(result.error ?? 'Failed to finish task');
     return result;
 }
@@ -650,23 +648,46 @@ export function useFinishTaskMutation(userId: string | undefined) {
     });
 }
 
-/** Poster confirms task completion via `confirm_task_completion` RPC. */
-async function confirmTaskCompletionFn({ taskId, posterId }: { taskId: string; posterId: string }) {
-    const { data, error } = await supabase.rpc('confirm_task_completion', {
+/** Poster marks payment as sent via `mark_payment_sent` RPC. */
+async function markPaymentSentFn({ taskId, posterId }: { taskId: string; posterId: string }) {
+    const { data, error } = await supabase.rpc('mark_payment_sent', {
         p_task_id: taskId,
         p_poster_id: posterId,
     });
     if (error) throw new Error(error.message);
     const result = data as { success: boolean; error?: string };
-    if (!result.success) throw new Error(result.error ?? 'Failed to confirm completion');
+    if (!result.success) throw new Error(result.error ?? 'Failed to mark payment as sent');
     return result;
 }
 
-/** Mutation hook for the poster to confirm task completion. */
-export function useConfirmTaskCompletionMutation(userId: string | undefined) {
+/** Mutation hook for the poster to mark payment as sent. */
+export function useMarkPaymentSentMutation(userId: string | undefined) {
     return useMutation({
         mutationFn: ({ taskId }: { taskId: string }) =>
-            confirmTaskCompletionFn({ taskId, posterId: userId! }),
+            markPaymentSentFn({ taskId, posterId: userId! }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+        },
+    });
+}
+
+/** Tasker confirms payment received via `confirm_payment_received` RPC. */
+async function confirmPaymentReceivedFn({ taskId, taskerId }: { taskId: string; taskerId: string }) {
+    const { data, error } = await supabase.rpc('confirm_payment_received', {
+        p_task_id: taskId,
+        p_tasker_id: taskerId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to confirm payment');
+    return result;
+}
+
+/** Mutation hook for the tasker to confirm payment received (triggers task completion). */
+export function useConfirmPaymentReceivedMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: ({ taskId }: { taskId: string }) =>
+            confirmPaymentReceivedFn({ taskId, taskerId: userId! }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
         },

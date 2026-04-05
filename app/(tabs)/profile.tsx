@@ -10,12 +10,12 @@ import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { CustomAlert } from '@/components/CustomAlert';
+import { useToast } from '@/contexts/ToastContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
-    Alert,
     Platform,
     ScrollView,
     StyleSheet,
@@ -38,6 +38,7 @@ import Animated, {
 export default function ProfileScreen() {
     const { user, profile, signOut } = useAuth();
     const { isDark, toggleTheme, colors } = useTheme();
+    const { showToast } = useToast();
     const router = useRouter();
 
     const logoutScale = useSharedValue(1);
@@ -54,7 +55,7 @@ export default function ProfileScreen() {
 
     const handleSupportDevs = () => {
         Linking.openURL('upi://pay?pa=joelkizyking@oksbi&pn=Chhehchhawl%20Developer&cu=INR').catch(() => {
-            Alert.alert('Error', 'No UPI payment app found on this device.');
+            showToast('No UPI payment app found on this device.', 'warning');
         });
     };
 
@@ -277,7 +278,7 @@ export default function ProfileScreen() {
             >
                 <View style={{ flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }}>
                     <Animated.View 
-                        entering={ZoomIn.duration(200).springify()}
+                        entering={ZoomIn.duration(220)}
                         exiting={ZoomOut.duration(200)}
                         style={{ width: '100%', maxWidth: 400, backgroundColor: colors.surface, borderRadius: BorderRadius.xl, padding: Spacing.xl, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10 }}
                     >

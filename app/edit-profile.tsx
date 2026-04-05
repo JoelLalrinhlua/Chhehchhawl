@@ -20,6 +20,7 @@ import { AnimatedInput } from '@/components/AnimatedInput';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import { useUsernameCheck } from '@/hooks/use-profile-queries';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +30,6 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -83,6 +83,7 @@ export default function EditProfileScreen() {
     const router                          = useRouter();
     const { user, profile, updateProfile } = useAuth();
     const { colors }                      = useTheme();
+    const { showToast }                   = useToast();
 
     // ── State ───────────────────────────────────────────────────────────────
     const [fullName,    setFullName]    = useState(profile?.full_name  ?? '');
@@ -104,19 +105,11 @@ export default function EditProfileScreen() {
     const isFullNameLocked  = !!fullNameCooldown;
 
     const handleLockedFullNamePress = () => {
-        Alert.alert(
-            '🔒 Full Name Locked',
-            `Your full name can only be changed once every ${FULLNAME_COOLDOWN_DAYS} days.\n\n${fullNameCooldown}`,
-            [{ text: 'OK' }]
-        );
+        showToast(`Full name locked for ${FULLNAME_COOLDOWN_DAYS} days. ${fullNameCooldown}`, 'info');
     };
 
     const handleLockedUsernamePress = () => {
-        Alert.alert(
-            '🔒 Username Locked',
-            `Your username can only be changed once every ${USERNAME_COOLDOWN_DAYS} days.\n\n${usernameCooldown}`,
-            [{ text: 'OK' }]
-        );
+        showToast(`Username locked for ${USERNAME_COOLDOWN_DAYS} days. ${usernameCooldown}`, 'info');
     };
 
 
@@ -161,7 +154,7 @@ export default function EditProfileScreen() {
     const handlePickAvatar = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert('Permission Required', 'Please allow access to your photo library to change your profile picture.');
+            showToast('Please allow access to your photo library to change your profile picture.', 'warning');
             return;
         }
 

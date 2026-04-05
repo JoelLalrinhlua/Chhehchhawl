@@ -37,7 +37,7 @@ export interface Task {
     latitude: number | null;
     longitude: number | null;
     assigned_to: string | null;
-    status: 'open' | 'assigned' | 'in-progress' | 'pending_confirmation' | 'completed' | 'cancelled';
+    status: 'open' | 'assigned' | 'in-progress' | 'pending_confirmation' | 'payment_pending' | 'payment_sent' | 'completed' | 'cancelled';
     tasker_completed: boolean;
     poster_confirmed: boolean;
     created_at: string;

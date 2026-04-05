@@ -27,6 +27,8 @@ export interface ChatRoom {
     poster_confirmed: boolean;
     poster_id: string;
     tasker_id: string;
+    task_budget: number | null;
+    tasker_upi_id: string | null;
 }
 
 /** Metadata for image messages. */
@@ -52,8 +54,15 @@ export interface LiveLocationMetadata {
     sharer_id?: string;
 }
 
+/** Metadata for payment_request messages sent in chat. */
+export interface PaymentRequestMetadata {
+    upi_id: string;
+    amount: number;
+    task_title: string;
+}
+
 /** Message types supported by the chat system. */
-export type MessageType = 'text' | 'image' | 'location_share' | 'location_request' | 'location_response' | 'system' | 'location_offer';
+export type MessageType = 'text' | 'image' | 'location_share' | 'location_request' | 'location_response' | 'system' | 'location_offer' | 'payment_request';
 
 /** Shape of a chat message row. */
 export interface ChatMessage {

@@ -11,6 +11,7 @@
  * Dismissal is handled via a pan-down gesture on the handle or a close button.
  */
 
+import { CustomAlert, type AlertButton } from '@/components/CustomAlert';
 import { EditTaskSheet } from '@/components/EditTaskSheet';
 import { MediaCarousel } from '@/components/MediaCarousel';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
@@ -18,12 +19,12 @@ import { useApplications } from '@/contexts/ApplicationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Task } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import { formatDistance, formatTimeAgo } from '@/utils/distance';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Dimensions,
     Modal,
     Platform,
@@ -66,6 +67,7 @@ interface TaskDetailSheetProps {
 export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, onFinishTask, onConfirmCompletion }: TaskDetailSheetProps) {
     const { colors } = useTheme();
     const { user } = useAuth();
+    const { showToast } = useToast();
     const { applyForTask, withdrawApplication, getMyApplicationStatus } =
         useApplications();
     const insets = useSafeAreaInsets();
@@ -80,6 +82,13 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [completionLoading, setCompletionLoading] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
+    // Custom alert state
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean; title: string; message: string;
+        variant: 'confirm' | 'destructive' | 'info';
+        buttons: AlertButton[];
+    }>({ visible: false, title: '', message: '', variant: 'confirm', buttons: [] });
+    const closeAlert = () => setAlertConfig((p) => ({ ...p, visible: false }));
 
     const isOwnTask = user?.id === task.created_by;
     const isAssignedTasker = user?.id === task.assigned_to;
@@ -149,17 +158,19 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
         if (result.success) {
             setApplicationStatus('pending');
             setShowMessageInput(false);
-            Alert.alert('Applied!', 'Your application has been submitted.');
+            showToast('Application submitted!', 'success');
         } else {
-            Alert.alert('Error', result.error ?? 'Failed to apply');
+            showToast(result.error ?? 'Failed to apply', 'error');
         }
     };
 
     const handleDelete = () => {
-        Alert.alert(
-            'Delete Task',
-            'Are you sure you want to delete this task? This action cannot be undone.',
-            [
+        setAlertConfig({
+            visible: true,
+            title: 'Delete Task',
+            message: 'Are you sure you want to delete this task? This action cannot be undone.',
+            variant: 'destructive',
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Delete',
@@ -171,21 +182,23 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             await onDelete(task.id);
                             onClose();
                         } catch {
-                            Alert.alert('Error', 'Failed to delete task. Please try again.');
+                            showToast('Failed to delete task. Please try again.', 'error');
                         } finally {
                             setDeleteLoading(false);
                         }
                     },
                 },
-            ]
-        );
+            ],
+        });
     };
 
     const handleWithdraw = () => {
-        Alert.alert(
-            'Withdraw Application',
-            'Are you sure you want to withdraw your application?',
-            [
+        setAlertConfig({
+            visible: true,
+            title: 'Withdraw Application',
+            message: 'Are you sure you want to withdraw your application?',
+            variant: 'destructive',
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Withdraw',
@@ -196,91 +209,74 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                         setApplyLoading(false);
                         if (result.success) {
                             setApplicationStatus('withdrawn');
+                            showToast('Application withdrawn.', 'info');
                         } else {
-                            Alert.alert(
-                                'Error',
-                                result.error ?? 'Failed to withdraw'
-                            );
+                            showToast(result.error ?? 'Failed to withdraw', 'error');
                         }
                     },
                 },
-            ]
-        );
+            ],
+        });
     };
 
     const getStatusLabel = (status: Task['status']) => {
         switch (status) {
-            case 'open':
-                return 'Open';
-            case 'assigned':
-                return 'Assigned';
-            case 'in-progress':
-                return 'In Progress';
-            case 'pending_confirmation':
-                return 'Pending Confirmation';
-            case 'completed':
-                return 'Completed';
-            case 'cancelled':
-                return 'Cancelled';
+            case 'open': return 'Open';
+            case 'assigned': return 'Assigned';
+            case 'in-progress': return 'In Progress';
+            case 'pending_confirmation': return 'Pending Confirmation';
+            case 'payment_pending': return 'Payment Pending';
+            case 'payment_sent': return 'Payment Sent';
+            case 'completed': return 'Completed';
+            case 'cancelled': return 'Cancelled';
         }
     };
 
     const getStatusColor = (status: Task['status']) => {
         switch (status) {
-            case 'open':
-                return colors.statusGreen;
-            case 'assigned':
-                return colors.statusOrange;
-            case 'in-progress':
-                return colors.statusOrange;
-            case 'pending_confirmation':
-                return colors.statusOrange;
-            case 'completed':
-                return colors.textMuted;
-            case 'cancelled':
-                return colors.statusRed;
+            case 'open': return colors.statusGreen;
+            case 'assigned': return colors.statusOrange;
+            case 'in-progress': return colors.statusOrange;
+            case 'pending_confirmation': return colors.statusOrange;
+            case 'payment_pending': return colors.statusOrange;
+            case 'payment_sent': return colors.statusGreen;
+            case 'completed': return colors.textMuted;
+            case 'cancelled': return colors.statusRed;
         }
     };
 
     // Determine footer button state
     const renderFooterButton = () => {
-        // ── Assigned tasker: Finish Task / Already Finished ──
-        if (isAssignedTasker && ['assigned', 'in-progress', 'pending_confirmation'].includes(task.status)) {
-            if (task.tasker_completed) {
-                return (
-                    <View style={[styles.applyButton, { backgroundColor: colors.statusOrange + '20' }]}>
-                        <Ionicons name="hourglass-outline" size={18} color={colors.statusOrange} />
-                        <Text style={[styles.applyText, { color: colors.statusOrange, fontFamily: FontFamily.bold, marginLeft: 8 }]}>
-                            Waiting for Poster Confirmation
-                        </Text>
-                    </View>
-                );
-            }
+        // ── Assigned tasker: Finish Task / Waiting for payment ──
+        if (isAssignedTasker && ['assigned', 'in-progress'].includes(task.status)) {
             return (
                 <Pressable
                     style={[styles.applyButton, { backgroundColor: colors.statusGreen }]}
                     onPress={() => {
-                        Alert.alert(
-                            'Finish Task',
-                            'Mark this task as finished? The poster will need to confirm completion.',
-                            [
+                        setAlertConfig({
+                            visible: true,
+                            title: 'Finish Task',
+                            message: 'Mark this task as finished? The poster will be asked to pay via UPI.',
+                            variant: 'confirm',
+                            buttons: [
                                 { text: 'Cancel', style: 'cancel' },
                                 {
                                     text: 'Finish',
+                                    style: 'default',
                                     onPress: async () => {
                                         if (!onFinishTask) return;
                                         setCompletionLoading(true);
                                         try {
                                             await onFinishTask(task.id);
                                         } catch (err: any) {
-                                            Alert.alert('Error', err.message || 'Failed to finish task');
+                                            showToast(err.message || 'Failed to finish task', 'error');
                                         } finally {
                                             setCompletionLoading(false);
                                         }
                                     },
                                 },
-                            ]
-                        );
+                            ],
+                        });
                     }}
                     disabled={completionLoading}
                 >
@@ -295,46 +291,39 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
             );
         }
 
-        // ── Own task: poster actions ──
+        // ── Assigned tasker: payment in progress states ──
+        if (isAssignedTasker && ['payment_pending', 'payment_sent'].includes(task.status)) {
+            return (
+                <View style={[styles.applyButton, { backgroundColor: colors.statusOrange + '20' }]}>
+                    <Ionicons name="wallet-outline" size={18} color={colors.statusOrange} />
+                    <Text style={[styles.applyText, { color: colors.statusOrange, fontFamily: FontFamily.bold, marginLeft: 8 }]}>
+                        {task.status === 'payment_pending' ? 'Waiting for Payment' : 'Open Chat to Confirm Receipt'}
+                    </Text>
+                </View>
+            );
+        }
+
+        // ── Own task: poster payment actions ──
         if (isOwnTask) {
-            // Poster can confirm completion if tasker finished
-            if (['assigned', 'in-progress', 'pending_confirmation'].includes(task.status) && task.tasker_completed && !task.poster_confirmed) {
+            // Poster needs to pay — direct them to open chat
+            if (task.status === 'payment_pending') {
                 return (
-                    <Pressable
-                        style={[styles.applyButton, { backgroundColor: colors.statusGreen }]}
-                        onPress={() => {
-                            Alert.alert(
-                                'Confirm Completion',
-                                'Confirm that this task has been completed successfully?',
-                                [
-                                    { text: 'Cancel', style: 'cancel' },
-                                    {
-                                        text: 'Confirm',
-                                        onPress: async () => {
-                                            if (!onConfirmCompletion) return;
-                                            setCompletionLoading(true);
-                                            try {
-                                                await onConfirmCompletion(task.id);
-                                            } catch (err: any) {
-                                                Alert.alert('Error', err.message || 'Failed to confirm');
-                                            } finally {
-                                                setCompletionLoading(false);
-                                            }
-                                        },
-                                    },
-                                ]
-                            );
-                        }}
-                        disabled={completionLoading}
-                    >
-                        {completionLoading ? (
-                            <ActivityIndicator size="small" color="#FFF" />
-                        ) : (
-                            <Text style={[styles.applyText, { fontFamily: FontFamily.bold }]}>
-                                Confirm Completion
-                            </Text>
-                        )}
-                    </Pressable>
+                    <View style={[styles.applyButton, { backgroundColor: '#6C47FF' + '20' }]}>
+                        <Ionicons name="wallet-outline" size={18} color="#6C47FF" />
+                        <Text style={[styles.applyText, { color: '#6C47FF', fontFamily: FontFamily.bold, marginLeft: 8 }]}>
+                            Open Chat to Pay
+                        </Text>
+                    </View>
+                );
+            }
+            if (task.status === 'payment_sent') {
+                return (
+                    <View style={[styles.applyButton, { backgroundColor: colors.statusGreen + '20' }]}>
+                        <Ionicons name="checkmark-circle-outline" size={18} color={colors.statusGreen} />
+                        <Text style={[styles.applyText, { color: colors.statusGreen, fontFamily: FontFamily.bold, marginLeft: 8 }]}>
+                            Payment Sent — Awaiting Confirmation
+                        </Text>
+                    </View>
                 );
             }
 
@@ -823,8 +812,8 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             style={{ width: '100%', alignItems: 'center' }}
                         >
                             <Animated.View 
-                                entering={ZoomIn.duration(200).springify()}
-                                exiting={ZoomOut.duration(200)}
+                                entering={ZoomIn.duration(220)}
+                                exiting={ZoomOut.duration(160)}
                                 style={[styles.popupCard, { backgroundColor: colors.surface }]}
                             >
                                 <Text style={[styles.popupTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
@@ -886,6 +875,16 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                     onClose={() => setEditingTask(null)}
                 />
             )}
+
+            {/* Themed confirmation dialog */}
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                variant={alertConfig.variant}
+                buttons={alertConfig.buttons}
+                onDismiss={closeAlert}
+            />
         </Modal>
     );
 }

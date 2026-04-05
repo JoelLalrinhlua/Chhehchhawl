@@ -12,6 +12,7 @@ import { AnimatedInput } from '@/components/AnimatedInput';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useToast } from '@/contexts/ToastContext';
 import { checkPasswordStrength, isValidEmail } from '@/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -19,7 +20,6 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Dimensions,
     KeyboardAvoidingView,
     Platform,
@@ -42,6 +42,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function LoginScreen() {
     const { signIn, signUp, signInWithGoogle } = useAuth();
     const { colors } = useTheme();
+    const { showToast } = useToast();
 
     const [isSignUp, setIsSignUp] = useState(false);
     const [email, setEmail] = useState('');
@@ -124,11 +125,7 @@ export default function LoginScreen() {
                 }
             }
         } else if (isSignUp) {
-            Alert.alert(
-                'Check your email',
-                'We sent you a confirmation link. Please verify your email to continue.',
-                [{ text: 'OK' }]
-            );
+            showToast('Check your email — we sent a confirmation link.', 'info');
         } else {
             // Successful sign-in — reset attempt counter
             setFailedAttempts(0);

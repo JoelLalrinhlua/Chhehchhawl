@@ -16,12 +16,12 @@ import { useApplications } from '@/contexts/ApplicationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTasks, type Task } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useConfirmTaskCompletionMutation, useFinishTaskMutation } from '@/hooks/use-mutations';
+import { useFinishTaskMutation, useMarkPaymentSentMutation } from '@/hooks/use-mutations';
 import { useMyAppliedTasksQuery, type AppliedTask } from '@/hooks/use-task-queries';
+import { useToast } from '@/contexts/ToastContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    Alert,
     Dimensions,
     FlatList,
     Pressable,
@@ -42,6 +42,7 @@ const TABS = ['My Tasks', 'My Posts'];
 export default function MyTasksScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
+    const { showToast } = useToast();
     const { getMyPosts, getMyTasks, refreshTasks, deleteTask } = useTasks();
     const { applicantCounts, refreshApplicantCounts, myApplications } = useApplications();
     const [activeTab, setActiveTab] = useState(0);
@@ -51,7 +52,7 @@ export default function MyTasksScreen() {
     const tabIndicatorX = useSharedValue(0);
 
     const finishTaskMutation = useFinishTaskMutation(user?.id);
-    const confirmCompletionMutation = useConfirmTaskCompletionMutation(user?.id);
+    const markPaymentSentMutation = useMarkPaymentSentMutation(user?.id);
 
     const myPosts = getMyPosts(user?.id || '');
     const myTasks = getMyTasks(user?.id || '');
@@ -91,31 +92,30 @@ export default function MyTasksScreen() {
             refreshTasks();
             setSelectedTask(null);
         } catch (err: any) {
-            Alert.alert('Error', err.message ?? 'Failed to finish task');
+            showToast(err.message ?? 'Failed to finish task', 'error');
             throw err;
         }
     }, [finishTaskMutation, refreshTasks]);
 
-    // Handle poster confirming task completion (My Posts)
+    // Handle poster marking payment as sent (My Posts — from task detail)
     const handleConfirmCompletion = useCallback(async (taskId: string) => {
         try {
-            await confirmCompletionMutation.mutateAsync({ taskId });
+            await markPaymentSentMutation.mutateAsync({ taskId });
             refreshTasks();
             setSelectedPostTask(null);
         } catch (err: any) {
-            Alert.alert('Error', err.message ?? 'Failed to confirm completion');
+            showToast(err.message ?? 'Failed to mark payment sent', 'error');
             throw err;
         }
-    }, [confirmCompletionMutation, refreshTasks]);
+    }, [markPaymentSentMutation, refreshTasks]);
 
     // Handle task deletion from My Posts
     const handleDeleteTask = useCallback(async (taskId: string) => {
         const result = await deleteTask(taskId);
         if (result.error) {
-            Alert.alert('Error', result.error);
+            showToast(result.error, 'error');
             throw new Error(result.error);
         }
-        // Close the detail sheet and refresh counts
         setSelectedPostTask(null);
         refreshApplicantCounts(myPosts.filter(t => t.id !== taskId).map(t => t.id));
     }, [deleteTask, myPosts, refreshApplicantCounts]);
@@ -141,6 +141,10 @@ export default function MyTasksScreen() {
                     return { label: 'Assigned', color: colors.statusOrange, icon: 'person' as const };
                 case 'in-progress':
                     return { label: 'In Progress', color: colors.statusOrange, icon: 'time' as const };
+                case 'payment_pending':
+                    return { label: 'Payment Pending', color: colors.statusOrange, icon: 'wallet' as const };
+                case 'payment_sent':
+                    return { label: 'Payment Sent', color: colors.statusGreen, icon: 'card' as const };
                 case 'completed':
                     return { label: 'Completed', color: colors.textMuted, icon: 'checkmark-circle' as const };
                 case 'pending_confirmation':
