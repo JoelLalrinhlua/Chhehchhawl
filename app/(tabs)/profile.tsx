@@ -1,7 +1,7 @@
 /**
  * (tabs)/profile.tsx — User profile screen.
  *
- * Displays the current user’s avatar, name, username, email, phone, date
+ * Displays the current user's avatar, name, username, email, phone, date
  * of birth, location (state & district), and joined date. Includes a
  * dark/light theme toggle and a sign-out button with animated press feedback.
  */
@@ -10,6 +10,8 @@ import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import {
     Alert,
@@ -30,6 +32,7 @@ import Animated, {
 export default function ProfileScreen() {
     const { user, profile, signOut } = useAuth();
     const { isDark, toggleTheme, colors } = useTheme();
+    const router = useRouter();
 
     const logoutScale = useSharedValue(1);
     const logoutAnimStyle = useAnimatedStyle(() => ({
@@ -74,9 +77,29 @@ export default function ProfileScreen() {
         >
             {/* Profile Header */}
             <View style={styles.profileHeader}>
-                <View style={[styles.avatar, { backgroundColor: colors.accent + '30' }]}>
-                    <Text style={[styles.avatarText, { color: colors.accent }]}>{initials}</Text>
-                </View>
+                {/* Avatar — shows photo if available, else initials */}
+                <TouchableOpacity
+                    style={styles.avatarWrapper}
+                    onPress={() => router.push('/edit-profile')}
+                    activeOpacity={0.85}
+                >
+                    {profile?.avatar_url ? (
+                        <Image
+                            source={{ uri: profile.avatar_url }}
+                            style={[styles.avatar, styles.avatarImage]}
+                            contentFit="cover"
+                            transition={300}
+                        />
+                    ) : (
+                        <View style={[styles.avatar, { backgroundColor: colors.accent + '30' }]}>
+                            <Text style={[styles.avatarText, { color: colors.accent }]}>{initials}</Text>
+                        </View>
+                    )}
+                    <View style={[styles.editBadge, { backgroundColor: colors.accent }]}>
+                        <Ionicons name="camera" size={12} color="#FFF" />
+                    </View>
+                </TouchableOpacity>
+
                 <Text style={[styles.name, { color: colors.text }]}>{displayName}</Text>
                 <Text style={[styles.email, { color: colors.textMuted }]}>{displayEmail}</Text>
                 {profile?.username && (
@@ -92,6 +115,11 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
                 )}
+                {profile?.bio ? (
+                    <Text style={[styles.bioText, { color: colors.textSecondary }]}>
+                        {profile.bio}
+                    </Text>
+                ) : null}
             </View>
 
             {/* Appearance */}
@@ -123,7 +151,11 @@ export default function ProfileScreen() {
             <View>
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
-                    <TouchableOpacity style={styles.settingRow}>
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={() => router.push('/edit-profile')}
+                        activeOpacity={0.7}
+                    >
                         <View style={styles.settingLeft}>
                             <Ionicons name="person-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Edit Profile</Text>
@@ -131,7 +163,7 @@ export default function ProfileScreen() {
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                     <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
-                    <TouchableOpacity style={styles.settingRow}>
+                    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
                         <View style={styles.settingLeft}>
                             <Ionicons name="notifications-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Notifications</Text>
@@ -139,7 +171,7 @@ export default function ProfileScreen() {
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                     <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
-                    <TouchableOpacity style={styles.settingRow}>
+                    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
                         <View style={styles.settingLeft}>
                             <Ionicons name="shield-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Privacy</Text>
@@ -153,7 +185,7 @@ export default function ProfileScreen() {
             <View>
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Support</Text>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
-                    <TouchableOpacity style={styles.settingRow}>
+                    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
                         <View style={styles.settingLeft}>
                             <Ionicons name="help-circle-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Help Center</Text>
@@ -161,7 +193,23 @@ export default function ProfileScreen() {
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                     <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
-                    <TouchableOpacity style={styles.settingRow}>
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={() => router.push('/suggestions')}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.settingLeft}>
+                            <Ionicons name="bulb-outline" size={22} color={colors.textSecondary} />
+                            <Text style={[styles.settingText, { color: colors.text }]}>Suggestions</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                    </TouchableOpacity>
+                    <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={() => router.push('/terms-of-service')}
+                        activeOpacity={0.7}
+                    >
                         <View style={styles.settingLeft}>
                             <Ionicons name="document-text-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Terms of Service</Text>
@@ -207,13 +255,31 @@ const makeStyles = (colors: any) =>
             alignItems: 'center',
             marginBottom: Spacing.xl,
         },
+        avatarWrapper: {
+            position: 'relative',
+            marginBottom: Spacing.md,
+        },
         avatar: {
-            width: 80,
-            height: 80,
-            borderRadius: 40,
+            width: 88,
+            height: 88,
+            borderRadius: 44,
             justifyContent: 'center',
             alignItems: 'center',
-            marginBottom: Spacing.md,
+        },
+        avatarImage: {
+            width: 88,
+            height: 88,
+            borderRadius: 44,
+        },
+        editBadge: {
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 26,
+            height: 26,
+            borderRadius: 13,
+            alignItems: 'center',
+            justifyContent: 'center',
         },
         avatarText: {
             fontSize: FontSize.xxl,
@@ -242,6 +308,14 @@ const makeStyles = (colors: any) =>
         locationText: {
             fontSize: FontSize.xs,
             fontFamily: FontFamily.regular,
+        },
+        bioText: {
+            fontSize: FontSize.sm,
+            fontFamily: FontFamily.regular,
+            textAlign: 'center',
+            marginTop: 8,
+            paddingHorizontal: Spacing.lg,
+            lineHeight: 20,
         },
         sectionTitle: {
             fontSize: FontSize.xs,

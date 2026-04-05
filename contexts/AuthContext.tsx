@@ -40,10 +40,15 @@ export type Profile = {
     profile_completed: boolean;
     created_at: string;
     updated_at: string;
+    /** ISO timestamp of the last username change. Null means never changed / no cooldown. */
+    username_updated_at: string | null;
+    /** ISO timestamp of the last full_name change. Null means never changed / no cooldown. */
+    full_name_updated_at: string | null;
 };
 
 /** Read-only auth state exposed to consumers. */
 type AuthState = {
+    /** Raw Supabase session — exposed only for advanced use (e.g. SDK calls that need the token). */
     session: Session | null;
     user: User | null;
     profile: Profile | null;
@@ -268,8 +273,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data && !data.success) {
             return { error: data.error || 'Failed to send OTP' };
         }
-        // otp_preview is returned for development only — remove in production
-        return { error: null, otpPreview: data?.otp_preview };
+        // SECURITY: otp_preview is stripped from the RPC response in the DB function.
+        // It is only returned here in __DEV__ mode, never in production builds.
+        // In production integrate an SMS provider (Twilio, AWS SNS, etc.) in the DB function.
+        const otpPreview = __DEV__ ? data?.otp_preview : undefined;
+        return { error: null, otpPreview };
     };
 
     /** Verify OTP via custom Supabase RPC (`verify_phone_otp`). */

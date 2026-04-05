@@ -3,7 +3,12 @@
  *
  * Shows real chat rooms from Supabase via `useChatRoomsQuery`.
  * Tapping a room opens the ChatRoomSheet modal for that conversation.
- * Includes search, pull-to-refresh, and Realtime subscription for live updates.
+ * Includes:
+ *  - Search, pull-to-refresh, Realtime subscription for live updates.
+ *  - Collapsible "Completed" section (collapsed by default).
+ *  - Long-press on completed chat → delete with confirmation dialog.
+ *  - "Poster" / "Tasker" role badge on each chat item.
+ *  - Active task counter in header.
  */
 
 import { ChatRoomSheet } from '@/components/ChatRoomSheet';
@@ -11,12 +16,14 @@ import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useChatRoomsQuery, type ChatRoom } from '@/hooks/use-chat-queries';
+import { useDeleteChatRoomMutation } from '@/hooks/use-mutations';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    Alert,
     ActivityIndicator,
     FlatList,
     Image,
@@ -27,6 +34,7 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -35,14 +43,37 @@ export default function ChatScreen() {
     const { user } = useAuth();
     const [search, setSearch] = useState('');
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+    const [completedExpanded, setCompletedExpanded] = useState(false);
+    const chevronRotation = useState(new Animated.Value(0))[0];
 
     const { data: rooms = [], isLoading, refetch } = useChatRoomsQuery(user?.id);
+    const deleteMutation = useDeleteChatRoomMutation(user?.id);
 
     // Derive selectedRoom from fresh query data so it stays in sync
     const selectedRoom = useMemo(
         () => (selectedRoomId ? rooms.find((r) => r.room_id === selectedRoomId) ?? null : null),
         [selectedRoomId, rooms]
     );
+
+    // Animate chevron on expand/collapse
+    useEffect(() => {
+        Animated.timing(chevronRotation, {
+            toValue: completedExpanded ? 1 : 0,
+            duration: 200,
+            useNativeDriver: true,
+        }).start();
+    }, [completedExpanded, chevronRotation]);
+
+    const chevronStyle = {
+        transform: [
+            {
+                rotate: chevronRotation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '90deg'],
+                }),
+            },
+        ],
+    };
 
     // Realtime: refresh room list when any message is inserted
     useEffect(() => {
@@ -66,7 +97,7 @@ export default function ChatScreen() {
         };
     }, [user?.id]);
 
-    // Realtime: refresh room list when tasks table changes (completion flow)
+    // Realtime: refresh room list when tasks table changes
     useEffect(() => {
         if (!user?.id) return;
 
@@ -91,19 +122,31 @@ export default function ChatScreen() {
         };
     }, [user?.id]);
 
-    const filteredRooms = useMemo(() => {
-        if (!search.trim()) return rooms;
-        const q = search.toLowerCase();
-        return rooms.filter(
-            (r) =>
-                r.other_user_name?.toLowerCase().includes(q) ||
-                r.task_title?.toLowerCase().includes(q)
-        );
+    // Split rooms into active vs completed, filtered by search
+    const { activeRooms, completedRooms } = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        const filtered = q
+            ? rooms.filter(
+                (r) =>
+                    r.other_user_name?.toLowerCase().includes(q) ||
+                    r.task_title?.toLowerCase().includes(q)
+            )
+            : rooms;
+
+        return {
+            activeRooms: filtered.filter((r) => r.task_status !== 'completed'),
+            completedRooms: filtered.filter((r) => r.task_status === 'completed'),
+        };
     }, [rooms, search]);
+
+    // Count active tasks the user is involved in across ALL rooms
+    const activeTaskCount = useMemo(
+        () => rooms.filter((r) => r.task_status !== 'completed').length,
+        [rooms]
+    );
 
     const handleCloseRoom = useCallback(() => {
         setSelectedRoomId(null);
-        // Refresh rooms to update unread counts
         if (user?.id) {
             queryClient.invalidateQueries({
                 queryKey: queryKeys.chat.rooms(user.id),
@@ -111,17 +154,47 @@ export default function ChatScreen() {
         }
     }, [user?.id]);
 
-    const renderItem = useCallback(
-        ({ item }: { item: ChatRoom }) => {
-            const isCompleted = item.task_status === 'completed';
+    const handleLongPressCompleted = useCallback(
+        (item: ChatRoom) => {
+            Alert.alert(
+                'Delete Chat',
+                `Delete this conversation with ${item.other_user_name ?? 'Unknown'}?\n\nThis will only remove the chat from your list — the task history is preserved.`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: async () => {
+                            try {
+                                await deleteMutation.mutateAsync({ roomId: item.room_id });
+                            } catch (err: any) {
+                                Alert.alert('Error', err.message || 'Failed to delete chat');
+                            }
+                        },
+                    },
+                ]
+            );
+        },
+        [deleteMutation]
+    );
+
+    const renderChatItem = useCallback(
+        (item: ChatRoom, isCompleted: boolean) => {
+            const isUserPoster = item.poster_id === user?.id;
+            const roleLabel = isUserPoster ? 'Poster' : 'Tasker';
+            const roleColor = isUserPoster ? colors.statusGreen : colors.accent;
+
             return (
                 <TouchableOpacity
+                    key={item.room_id}
                     style={[
                         styles.chatItem,
                         { backgroundColor: colors.card },
-                        isCompleted && { opacity: 0.5 },
+                        isCompleted && styles.chatItemCompleted,
                     ]}
                     onPress={() => setSelectedRoomId(item.room_id)}
+                    onLongPress={isCompleted ? () => handleLongPressCompleted(item) : undefined}
+                    delayLongPress={400}
                     activeOpacity={0.7}
                 >
                     <View style={[styles.avatar, { backgroundColor: colors.border }]}>
@@ -144,13 +217,32 @@ export default function ChatScreen() {
                             >
                                 {item.other_user_name ?? 'Unknown'}
                             </Text>
-                            {item.last_message_at && (
-                                <Text style={[styles.time, { color: colors.textMuted }]}>
-                                    {formatRelativeTime(item.last_message_at)}
-                                </Text>
-                            )}
+                            <View style={styles.headerRight}>
+                                {item.last_message_at && (
+                                    <Text style={[styles.time, { color: colors.textMuted }]}>
+                                        {formatRelativeTime(item.last_message_at)}
+                                    </Text>
+                                )}
+                            </View>
                         </View>
+
+                        {/* Role badge + task label row */}
                         <View style={styles.taskLabelRow}>
+                            <View
+                                style={[
+                                    styles.roleBadge,
+                                    { backgroundColor: roleColor + '18', borderColor: roleColor + '40' },
+                                ]}
+                            >
+                                <Ionicons
+                                    name={isUserPoster ? 'create-outline' : 'briefcase-outline'}
+                                    size={9}
+                                    color={roleColor}
+                                />
+                                <Text style={[styles.roleBadgeText, { color: roleColor }]}>
+                                    {roleLabel}
+                                </Text>
+                            </View>
                             <Text
                                 style={[
                                     styles.taskLabel,
@@ -169,6 +261,7 @@ export default function ChatScreen() {
                                 </View>
                             )}
                         </View>
+
                         {item.last_message && (
                             <Text
                                 style={[
@@ -194,10 +287,19 @@ export default function ChatScreen() {
                             </Text>
                         </View>
                     )}
+                    {/* Long-press hint for completed chats */}
+                    {isCompleted && (
+                        <Ionicons
+                            name="ellipsis-vertical"
+                            size={16}
+                            color={colors.textMuted}
+                            style={{ opacity: 0.5, marginLeft: 2 }}
+                        />
+                    )}
                 </TouchableOpacity>
             );
         },
-        [colors]
+        [colors, user?.id, handleLongPressCompleted]
     );
 
     const renderEmpty = useCallback(
@@ -233,10 +335,81 @@ export default function ChatScreen() {
         [colors, isLoading]
     );
 
+    // Build the flat list data: active rooms + completed section header + completed rooms (when expanded)
+    type ListItem =
+        | { type: 'room'; data: ChatRoom; isCompleted: boolean }
+        | { type: 'completed-header' }
+        | { type: 'empty' };
+
+    const listData = useMemo<ListItem[]>(() => {
+        const items: ListItem[] = activeRooms.map((r) => ({ type: 'room', data: r, isCompleted: false }));
+
+        if (completedRooms.length > 0) {
+            items.push({ type: 'completed-header' });
+            if (completedExpanded) {
+                completedRooms.forEach((r) => items.push({ type: 'room', data: r, isCompleted: true }));
+            }
+        }
+
+        if (items.length === 0) {
+            items.push({ type: 'empty' });
+        }
+
+        return items;
+    }, [activeRooms, completedRooms, completedExpanded]);
+
+    const renderListItem = useCallback(
+        ({ item }: { item: ListItem }) => {
+            if (item.type === 'empty') return renderEmpty();
+            if (item.type === 'completed-header') {
+                return (
+                    <TouchableOpacity
+                        style={[styles.completedHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setCompletedExpanded((v) => !v)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.completedHeaderLeft}>
+                            <Ionicons name="checkmark-done-circle-outline" size={18} color={colors.textMuted} />
+                            <Text style={[styles.completedHeaderText, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                                Completed chats
+                            </Text>
+                            <View style={[styles.completedCountBadge, { backgroundColor: colors.textMuted + '20' }]}>
+                                <Text style={[styles.completedCountText, { color: colors.textMuted }]}>
+                                    {completedRooms.length}
+                                </Text>
+                            </View>
+                        </View>
+                        <Animated.View style={chevronStyle}>
+                            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                        </Animated.View>
+                    </TouchableOpacity>
+                );
+            }
+            return renderChatItem(item.data, item.isCompleted);
+        },
+        [colors, completedRooms.length, completedExpanded, chevronStyle, renderChatItem, renderEmpty]
+    );
+
+    const keyExtractor = useCallback(
+        (item: ListItem, index: number) => {
+            if (item.type === 'room') return item.data.room_id;
+            if (item.type === 'completed-header') return 'completed-header';
+            return `empty-${index}`;
+        },
+        []
+    );
+
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={styles.header}>
-                <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
+                <View>
+                    <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
+                    {activeTaskCount > 0 && (
+                        <Text style={[styles.activeCount, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                            {activeTaskCount} active {activeTaskCount === 1 ? 'task' : 'tasks'}
+                        </Text>
+                    )}
+                </View>
             </View>
 
             {rooms.length > 0 && (
@@ -255,15 +428,14 @@ export default function ChatScreen() {
             )}
 
             <FlatList
-                data={filteredRooms}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.room_id}
+                data={listData}
+                renderItem={renderListItem}
+                keyExtractor={keyExtractor}
                 contentContainerStyle={[
                     styles.listContent,
-                    filteredRooms.length === 0 && styles.listContentEmpty,
+                    listData.length === 1 && listData[0].type === 'empty' && styles.listContentEmpty,
                 ]}
                 showsVerticalScrollIndicator={false}
-                ListEmptyComponent={renderEmpty}
                 refreshControl={
                     <RefreshControl
                         refreshing={false}
@@ -288,7 +460,7 @@ export default function ChatScreen() {
                     onClose={handleCloseRoom}
                 />
             )}
-            {/* Keep sheet open but with empty state if room vanishes briefly during refetch */}
+            {/* Keep sheet open but with loading state if room vanishes briefly during refetch */}
             {selectedRoomId && !selectedRoom && (
                 <Modal visible animationType="slide" statusBarTranslucent onRequestClose={handleCloseRoom}>
                     <View style={[styles.loadingOverlay, { backgroundColor: colors.background }]}>
@@ -322,7 +494,7 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         paddingHorizontal: Spacing.xl,
         paddingTop: Spacing.lg,
         paddingBottom: Spacing.md,
@@ -330,6 +502,10 @@ const styles = StyleSheet.create({
     title: {
         fontSize: FontSize.xxl,
         fontFamily: FontFamily.bold,
+    },
+    activeCount: {
+        fontSize: FontSize.xs,
+        marginTop: 2,
     },
     searchContainer: {
         paddingHorizontal: Spacing.xl,
@@ -363,6 +539,9 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.xl,
         gap: Spacing.md,
     },
+    chatItemCompleted: {
+        opacity: 0.65,
+    },
     avatar: {
         width: 50,
         height: 50,
@@ -385,7 +564,13 @@ const styles = StyleSheet.create({
     chatHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 2,
+        alignItems: 'center',
+        marginBottom: 3,
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     name: {
         fontSize: FontSize.md,
@@ -396,8 +581,24 @@ const styles = StyleSheet.create({
     taskLabelRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        gap: 5,
         marginBottom: 2,
+        flexWrap: 'nowrap',
+    },
+    roleBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 4,
+        borderWidth: 1,
+        gap: 2,
+        flexShrink: 0,
+    },
+    roleBadgeText: {
+        fontSize: 9,
+        fontFamily: FontFamily.semiBold,
+        letterSpacing: 0.2,
     },
     taskLabel: {
         fontSize: FontSize.xs,
@@ -410,6 +611,7 @@ const styles = StyleSheet.create({
         paddingVertical: 1,
         borderRadius: 4,
         gap: 3,
+        flexShrink: 0,
     },
     completedTagText: {
         fontSize: 9,
@@ -455,5 +657,32 @@ const styles = StyleSheet.create({
         fontSize: FontSize.sm,
         textAlign: 'center',
         lineHeight: 20,
+    },
+    // ── Completed section header ──
+    completedHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm + 2,
+        borderRadius: BorderRadius.lg,
+        borderWidth: 1,
+    },
+    completedHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+    },
+    completedHeaderText: {
+        fontSize: FontSize.sm,
+    },
+    completedCountBadge: {
+        paddingHorizontal: 7,
+        paddingVertical: 1,
+        borderRadius: 10,
+    },
+    completedCountText: {
+        fontSize: 11,
+        fontFamily: FontFamily.semiBold,
     },
 });

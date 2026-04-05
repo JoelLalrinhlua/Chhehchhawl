@@ -85,8 +85,8 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
 
     // Mutations via TanStack Query
     const createTaskMutation = useCreateTaskMutation(user?.id);
-    const updateTaskMutation = useUpdateTaskMutation();
-    const deleteTaskMutation = useDeleteTaskMutation();
+    const updateTaskMutation = useUpdateTaskMutation(user?.id);
+    const deleteTaskMutation = useDeleteTaskMutation(user?.id);
 
     // Refresh tasks by invalidating the query
     const refreshTasks = useCallback(async () => {
@@ -128,6 +128,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
     // ── Update task ──
     const updateTask = useCallback(
         async (id: string, data: Partial<Task>) => {
+            if (!user) return { error: 'Not authenticated' };
             try {
                 await updateTaskMutation.mutateAsync({ taskId: id, data });
                 return { error: null };
@@ -135,12 +136,13 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
                 return { error: err.message || 'Failed to update task' };
             }
         },
-        [updateTaskMutation]
+        [user, updateTaskMutation]
     );
 
     // ── Delete task ──
     const deleteTask = useCallback(
         async (id: string) => {
+            if (!user) return { error: 'Not authenticated' };
             try {
                 await deleteTaskMutation.mutateAsync(id);
                 return { error: null };
@@ -148,7 +150,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
                 return { error: err.message || 'Failed to delete task' };
             }
         },
-        [deleteTaskMutation]
+        [user, deleteTaskMutation]
     );
 
     // ── My posts (tasks I created) ──

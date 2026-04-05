@@ -113,42 +113,52 @@ export function useCreateTaskMutation(userId: string | undefined) {
 
 type UpdateTaskInput = {
     taskId: string;
+    userId: string; // Must match created_by for the RLS check to pass
     data: Partial<Task>;
 };
 
-/** Partially update an existing task row. */
-async function updateTaskFn({ taskId, data }: UpdateTaskInput) {
-    const { error } = await supabase.from('tasks').update(data).eq('id', taskId);
+/**
+ * Partially update an existing task row.
+ * The `.eq('created_by', userId)` guard means the update is a silent no-op
+ * if the caller is not the task owner — matching the server-side RLS policy.
+ */
+async function updateTaskFn({ taskId, userId, data }: UpdateTaskInput) {
+    const { error } = await supabase
+        .from('tasks')
+        .update(data)
+        .eq('id', taskId)
+        .eq('created_by', userId); // IDOR guard: only owner can update
     if (error) throw new Error(error.message);
 }
 
 /**
  * Mutation hook for updating a task (e.g. status change).
- * Invalidates the task feed after success.
+ * Requires `userId` so the ownership check can be included in the query.
  */
-export function useUpdateTaskMutation() {
+export function useUpdateTaskMutation(userId: string | undefined) {
     return useMutation({
-        mutationFn: ({ taskId, data }: UpdateTaskInput) =>
-            updateTaskFn({ taskId, data }),
+        mutationFn: ({ taskId, data }: { taskId: string; data: Partial<Task> }) =>
+            updateTaskFn({ taskId, userId: userId!, data }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
         },
     });
 }
 
-/** Delete a task by ID. */
-async function deleteTaskFn(taskId: string) {
-    const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+/** Delete a task by ID — only succeeds if the caller owns the task. */
+async function deleteTaskFn({ taskId, userId }: { taskId: string; userId: string }) {
+    const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId)
+        .eq('created_by', userId); // IDOR guard: only owner can delete
     if (error) throw new Error(error.message);
 }
 
-/**
- * Mutation hook for deleting a task.
- */
-/** Mutation hook to delete a task. Invalidates the task feed on success. */
-export function useDeleteTaskMutation() {
+/** Mutation hook to delete a task. Requires `userId` for the ownership check. */
+export function useDeleteTaskMutation(userId: string | undefined) {
     return useMutation({
-        mutationFn: deleteTaskFn,
+        mutationFn: (taskId: string) => deleteTaskFn({ taskId, userId: userId! }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
         },
@@ -402,20 +412,26 @@ export function useRejectApplicantMutation(posterId: string | undefined) {
 
 // ── Chat Mutations ─────────────────────────────────────────────
 
-/** Send a message via the `send_message` RPC. */
+/** Send a message via the `send_message` RPC. Supports typed messages. */
 async function sendMessageFn({
     roomId,
     senderId,
     message,
+    messageType = 'text',
+    metadata = null,
 }: {
     roomId: string;
     senderId: string;
     message: string;
+    messageType?: string;
+    metadata?: any;
 }) {
     const { data, error } = await supabase.rpc('send_message', {
         p_room_id: roomId,
         p_sender_id: senderId,
         p_message: message,
+        p_message_type: messageType,
+        p_metadata: metadata,
     });
     if (error) throw new Error(error.message);
     const result = data as { success: boolean; error?: string; message_id?: string };
@@ -423,11 +439,21 @@ async function sendMessageFn({
     return result;
 }
 
-/** Mutation hook to send a chat message. Invalidates messages + room list. */
+/** Mutation hook to send a chat message. Supports text, image, location types. */
 export function useSendMessageMutation(userId: string | undefined) {
     return useMutation({
-        mutationFn: ({ roomId, message }: { roomId: string; message: string }) =>
-            sendMessageFn({ roomId, senderId: userId!, message }),
+        mutationFn: ({
+            roomId,
+            message,
+            messageType,
+            metadata,
+        }: {
+            roomId: string;
+            message: string;
+            messageType?: string;
+            metadata?: any;
+        }) =>
+            sendMessageFn({ roomId, senderId: userId!, message, messageType, metadata }),
         onSuccess: (_data, { roomId }) => {
             queryClient.invalidateQueries({
                 queryKey: queryKeys.chat.messages(roomId),
@@ -452,6 +478,150 @@ async function markMessagesSeenFn({ roomId, userId }: { roomId: string; userId: 
 export function useMarkMessagesSeenMutation() {
     return useMutation({
         mutationFn: markMessagesSeenFn,
+    });
+}
+
+// ── Live Location Mutations ────────────────────────────────────
+
+/** Request live location sharing from the other user. */
+async function requestLiveLocationFn({
+    roomId,
+    targetUserId,
+}: {
+    roomId: string;
+    targetUserId: string;
+}) {
+    const { data, error } = await supabase.rpc('request_live_location', {
+        p_room_id: roomId,
+        p_target_user_id: targetUserId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string; session_id?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to request location');
+    return result;
+}
+
+export function useRequestLiveLocationMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: requestLiveLocationFn,
+        onSuccess: (_data, { roomId }) => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.liveLocation(roomId),
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.messages(roomId),
+            });
+        },
+    });
+}
+
+/** Offer live location (Tasker offering to Poster). Caller is the sharer. */
+async function offerLiveLocationFn({
+    roomId,
+    targetUserId,
+}: {
+    roomId: string;
+    targetUserId: string;
+}) {
+    const { data, error } = await supabase.rpc('offer_live_location', {
+        p_room_id: roomId,
+        p_target_user_id: targetUserId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string; session_id?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to offer location');
+    return result;
+}
+
+export function useOfferLiveLocationMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: offerLiveLocationFn,
+        onSuccess: (_data, { roomId }) => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.liveLocation(roomId),
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.messages(roomId),
+            });
+        },
+    });
+}
+
+/** Respond to a live location request. */
+async function respondLiveLocationFn({
+    sessionId,
+    accept,
+}: {
+    sessionId: string;
+    accept: boolean;
+}) {
+    const { data, error } = await supabase.rpc('respond_live_location', {
+        p_session_id: sessionId,
+        p_accept: accept,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to respond');
+    return result;
+}
+
+export function useRespondLiveLocationMutation(roomId: string) {
+    return useMutation({
+        mutationFn: respondLiveLocationFn,
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.liveLocation(roomId),
+            });
+        },
+    });
+}
+
+/** Update live location coordinates. */
+async function updateLiveLocationFn({
+    sessionId,
+    latitude,
+    longitude,
+}: {
+    sessionId: string;
+    latitude: number;
+    longitude: number;
+}) {
+    const { data, error } = await supabase.rpc('update_live_location', {
+        p_session_id: sessionId,
+        p_latitude: latitude,
+        p_longitude: longitude,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to update location');
+    return result;
+}
+
+export function useUpdateLiveLocationMutation() {
+    return useMutation({
+        mutationFn: updateLiveLocationFn,
+    });
+}
+
+/** Stop live location sharing. */
+async function stopLiveLocationFn({ sessionId }: { sessionId: string }) {
+    const { data, error } = await supabase.rpc('stop_live_location', {
+        p_session_id: sessionId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to stop');
+    return result;
+}
+
+export function useStopLiveLocationMutation(roomId: string) {
+    return useMutation({
+        mutationFn: stopLiveLocationFn,
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.chat.liveLocation(roomId),
+            });
+        },
     });
 }
 
@@ -499,6 +669,31 @@ export function useConfirmTaskCompletionMutation(userId: string | undefined) {
             confirmTaskCompletionFn({ taskId, posterId: userId! }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+        },
+    });
+}
+
+/** Delete (soft) a chat room via the `delete_chat_room` RPC. Only allowed when task is completed. */
+async function deleteChatRoomFn({ roomId }: { roomId: string }) {
+    const { data, error } = await supabase.rpc('delete_chat_room', {
+        p_room_id: roomId,
+    });
+    if (error) throw new Error(error.message);
+    const result = data as { success: boolean; error?: string };
+    if (!result.success) throw new Error(result.error ?? 'Failed to delete chat');
+    return result;
+}
+
+/** Mutation hook for soft-deleting a completed chat room. */
+export function useDeleteChatRoomMutation(userId: string | undefined) {
+    return useMutation({
+        mutationFn: ({ roomId }: { roomId: string }) => deleteChatRoomFn({ roomId }),
+        onSuccess: () => {
+            if (userId) {
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.chat.rooms(userId),
+                });
+            }
         },
     });
 }

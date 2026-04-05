@@ -86,6 +86,10 @@ function RootNavigator() {
         {/* Main app */}
         <Stack.Screen name="(tabs)" options={{ animation: 'fade', animationDuration: 150 }} />
         <Stack.Screen name="create-task" options={{ animation: 'slide_from_bottom', animationDuration: 250 }} />
+        {/* Profile sub-screens */}
+        <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right', animationDuration: 250 }} />
+        <Stack.Screen name="suggestions" options={{ animation: 'slide_from_bottom', animationDuration: 250 }} />
+        <Stack.Screen name="terms-of-service" options={{ animation: 'slide_from_right', animationDuration: 250 }} />
       </Stack>
       <StatusBar
         style={isDark ? 'light' : 'dark'}

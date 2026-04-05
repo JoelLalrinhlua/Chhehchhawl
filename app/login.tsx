@@ -52,12 +52,31 @@ export default function LoginScreen() {
     const [googleLoading, setGoogleLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Client-side brute-force protection: lock out after 5 failed sign-in attempts
+    const [failedAttempts, setFailedAttempts] = useState(0);
+    const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+    const MAX_ATTEMPTS = 5;
+    const LOCKOUT_SECONDS = 30;
+
     const buttonScale = useSharedValue(1);
     const buttonAnimStyle = useAnimatedStyle(() => ({
         transform: [{ scale: buttonScale.value }],
     }));
 
     const handleEmailAuth = async () => {
+        // --- Client-side lockout check ---
+        if (!isSignUp && lockoutUntil !== null) {
+            const secondsLeft = Math.ceil((lockoutUntil - Date.now()) / 1000);
+            if (secondsLeft > 0) {
+                setError(`Too many failed attempts. Try again in ${secondsLeft}s.`);
+                return;
+            } else {
+                // Lockout expired — reset counters
+                setLockoutUntil(null);
+                setFailedAttempts(0);
+            }
+        }
+
         // --- Validation ---
         if (!email.trim() || !password.trim()) {
             setError('Please fill in all fields');
@@ -79,8 +98,9 @@ export default function LoginScreen() {
                 setError('Passwords do not match');
                 return;
             }
-        } else if (password.length < 6) {
-            setError('Password must be at least 6 characters');
+        } else if (password.length < 8) {
+            // Must match the 8-char minimum enforced on sign-up
+            setError('Password must be at least 8 characters');
             return;
         }
 
@@ -95,12 +115,25 @@ export default function LoginScreen() {
 
         if (result.error) {
             setError(result.error);
+            if (!isSignUp) {
+                // Track failed sign-in attempts for rate-limiting
+                const newCount = failedAttempts + 1;
+                setFailedAttempts(newCount);
+                if (newCount >= MAX_ATTEMPTS) {
+                    setLockoutUntil(Date.now() + LOCKOUT_SECONDS * 1000);
+                    setError(`Too many failed attempts. Locked out for ${LOCKOUT_SECONDS} seconds.`);
+                }
+            }
         } else if (isSignUp) {
             Alert.alert(
                 'Check your email',
                 'We sent you a confirmation link. Please verify your email to continue.',
                 [{ text: 'OK' }]
             );
+        } else {
+            // Successful sign-in — reset attempt counter
+            setFailedAttempts(0);
+            setLockoutUntil(null);
         }
     };
 

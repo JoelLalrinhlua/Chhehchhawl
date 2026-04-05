@@ -15,7 +15,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -46,6 +46,30 @@ export default function PhoneAuthScreen() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Resend cooldown: 60-second timer after each OTP send
+    const [resendCooldown, setResendCooldown] = useState(0);
+    const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (cooldownRef.current) clearInterval(cooldownRef.current);
+        };
+    }, []);
+
+    const startResendCooldown = () => {
+        setResendCooldown(60);
+        if (cooldownRef.current) clearInterval(cooldownRef.current);
+        cooldownRef.current = setInterval(() => {
+            setResendCooldown((prev) => {
+                if (prev <= 1) {
+                    clearInterval(cooldownRef.current!);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
     const buttonScale = useSharedValue(1);
     const buttonAnimStyle = useAnimatedStyle(() => ({
         transform: [{ scale: buttonScale.value }],
@@ -74,6 +98,7 @@ export default function PhoneAuthScreen() {
             setError(result.error);
         } else {
             setStep('otp');
+            startResendCooldown();
         }
     };
 
@@ -196,14 +221,21 @@ export default function PhoneAuthScreen() {
 
                         <TouchableOpacity
                             onPress={() => {
+                                if (resendCooldown > 0) return;
                                 setStep('phone');
                                 setOtp('');
                                 setError(null);
                             }}
                             style={styles.resendButton}
+                            disabled={resendCooldown > 0}
                         >
-                            <Text style={[styles.resendText, { color: colors.accent }]}>
-                                Change number or resend code
+                            <Text style={[
+                                styles.resendText,
+                                { color: resendCooldown > 0 ? colors.textMuted : colors.accent },
+                            ]}>
+                                {resendCooldown > 0
+                                    ? `Resend available in ${resendCooldown}s`
+                                    : 'Change number or resend code'}
                             </Text>
                         </TouchableOpacity>
                     </Animated.View>

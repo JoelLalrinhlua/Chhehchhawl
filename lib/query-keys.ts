@@ -38,6 +38,7 @@ export const queryKeys = {
         all: ['chat'] as const,
         rooms: (userId: string) => ['chat', 'rooms', userId] as const,
         messages: (roomId: string) => ['chat', 'messages', roomId] as const,
+        liveLocation: (roomId: string) => ['chat', 'live-location', roomId] as const,
     },
 
     // ── Notifications ──
