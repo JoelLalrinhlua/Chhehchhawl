@@ -74,22 +74,21 @@ function RootNavigator() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
-          animation: 'fade',
-          animationDuration: 200,
+          animation: 'default',
         }}
       >
         {/* Auth screens */}
         <Stack.Screen name="login" options={{ animation: 'fade' }} />
-        <Stack.Screen name="phone-auth" options={{ animation: 'slide_from_right', animationDuration: 250 }} />
+        <Stack.Screen name="phone-auth" options={{ animation: 'default' }} />
         {/* Profile completion */}
         <Stack.Screen name="complete-profile" options={{ animation: 'fade' }} />
         {/* Main app */}
-        <Stack.Screen name="(tabs)" options={{ animation: 'fade', animationDuration: 150 }} />
-        <Stack.Screen name="create-task" options={{ animation: 'slide_from_bottom', animationDuration: 250 }} />
+        <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+        <Stack.Screen name="create-task" options={{ animation: 'slide_from_bottom' }} />
         {/* Profile sub-screens */}
-        <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right', animationDuration: 250 }} />
-        <Stack.Screen name="suggestions" options={{ animation: 'slide_from_bottom', animationDuration: 250 }} />
-        <Stack.Screen name="terms-of-service" options={{ animation: 'slide_from_right', animationDuration: 250 }} />
+        <Stack.Screen name="edit-profile" options={{ animation: 'default' }} />
+        <Stack.Screen name="suggestions" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="terms-of-service" options={{ animation: 'default' }} />
       </Stack>
       <StatusBar
         style={isDark ? 'light' : 'dark'}

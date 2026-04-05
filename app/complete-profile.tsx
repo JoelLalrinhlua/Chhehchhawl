@@ -32,7 +32,6 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -44,14 +43,12 @@ import Animated, {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TOTAL_STEPS = 3;
-const OTP_LENGTH = 6;
-const RESEND_COOLDOWN = 60;
 
 // ═══════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════
 export default function CompleteProfileScreen() {
-    const { user, updateProfile, sendPhoneVerification, verifyPhoneCode, signOut } = useAuth();
+    const { user, updateProfile, signOut } = useAuth();
     const { colors } = useTheme();
 
     const [currentStep, setCurrentStep] = useState(1);
@@ -97,33 +94,11 @@ export default function CompleteProfileScreen() {
     const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
     const [locationDetectedText, setLocationDetectedText] = useState('');
 
-    // ── Step 3: Phone OTP ──
+    // ── Step 3: Phone & Payment ──
     const [phone, setPhone] = useState('');
-    const [otpSent, setOtpSent] = useState(false);
-    const [otpCode, setOtpCode] = useState<string[]>(new Array(OTP_LENGTH).fill(''));
-    const [otpLoading, setOtpLoading] = useState(false);
-    const [verifyLoading, setVerifyLoading] = useState(false);
-    const [phoneVerified, setPhoneVerified] = useState(false);
-    const [resendTimer, setResendTimer] = useState(0);
+    const [upiId, setUpiId] = useState('');
     const [finalLoading, setFinalLoading] = useState(false);
-    const otpInputRefs = useRef<(TextInput | null)[]>([]);
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // ── Countdown timer ──
-    useEffect(() => {
-        if (resendTimer > 0) {
-            timerRef.current = setInterval(() => {
-                setResendTimer((prev) => {
-                    if (prev <= 1) {
-                        if (timerRef.current) clearInterval(timerRef.current);
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        }
-        return () => { if (timerRef.current) clearInterval(timerRef.current); };
-    }, [resendTimer]);
 
     // ── Username duplicate check (debounced via TanStack Query) ──
     const handleUsernameChange = (text: string) => {
@@ -222,72 +197,20 @@ export default function CompleteProfileScreen() {
         setCurrentStep((prev) => Math.max(prev - 1, 1));
     };
 
-    // ── Phone OTP ──
+    // ── Phone validation ──
     const rawDigits = phone.replace(/\D/g, '');
     const isPhoneValid = rawDigits.length === 10 && /^[6-9]/.test(rawDigits);
 
-    const handleSendOtp = async () => {
-        if (!isPhoneValid) { setError('Enter a valid 10-digit Indian mobile number'); return; }
-        setOtpLoading(true);
-        setError(null);
-        const normalized = normalizePhone(rawDigits);
-        const result = await sendPhoneVerification(normalized);
-        setOtpLoading(false);
-        if (result.error) {
-            setError(result.error);
-        } else {
-            setOtpSent(true);
-            setResendTimer(RESEND_COOLDOWN);
-            setTimeout(() => otpInputRefs.current[0]?.focus(), 300);
-            // DEV ONLY: Show OTP in alert (remove before production)
-            if (__DEV__ && result.otpPreview) {
-                Alert.alert('Dev OTP', `Your verification code: ${result.otpPreview}`);
-            }
-        }
-    };
+    // ── UPI ID validation (basic: must contain @) ──
+    const isUpiValid = upiId.trim().length >= 3 && upiId.includes('@');
 
-    const handleOtpChange = (text: string, index: number) => {
-        const digit = text.replace(/\D/g, '').slice(-1);
-        const newCode = [...otpCode];
-        newCode[index] = digit;
-        setOtpCode(newCode);
-        setError(null);
-        if (digit && index < OTP_LENGTH - 1) {
-            otpInputRefs.current[index + 1]?.focus();
-        }
-        const fullCode = newCode.join('');
-        if (fullCode.length === OTP_LENGTH) handleVerifyOtp(fullCode);
-    };
-
-    const handleOtpKeyPress = (key: string, index: number) => {
-        if (key === 'Backspace' && !otpCode[index] && index > 0) {
-            otpInputRefs.current[index - 1]?.focus();
-            const newCode = [...otpCode];
-            newCode[index - 1] = '';
-            setOtpCode(newCode);
-        }
-    };
-
-    const handleVerifyOtp = async (code?: string) => {
-        const finalCode = code || otpCode.join('');
-        if (finalCode.length !== OTP_LENGTH) { setError('Please enter the full 6-digit code'); return; }
-        setVerifyLoading(true);
-        setError(null);
-        const normalized = normalizePhone(rawDigits);
-        const result = await verifyPhoneCode(normalized, finalCode);
-        setVerifyLoading(false);
-        if (result.error) {
-            setError(result.error);
-            setOtpCode(new Array(OTP_LENGTH).fill(''));
-            otpInputRefs.current[0]?.focus();
-        } else {
-            setPhoneVerified(true);
-        }
-    };
+    // Can finish when phone and UPI are valid
+    const canFinish = isPhoneValid && isUpiValid;
 
     // ── Final Submit ──
     const handleFinishProfile = async () => {
-        if (!phoneVerified) { setError('Please verify your phone number'); return; }
+        if (!isPhoneValid) { setError('Please enter a valid 10-digit phone number'); return; }
+        if (!isUpiValid) { setError('Please enter a valid UPI ID (e.g. name@upi)'); return; }
         setFinalLoading(true);
         setError(null);
 
@@ -297,6 +220,7 @@ export default function CompleteProfileScreen() {
             username: username.trim().toLowerCase(),
             date_of_birth: isoDate,
             phone: normalizePhone(rawDigits),
+            upi_id: upiId.trim(),
             home_latitude: pinLocation!.latitude,
             home_longitude: pinLocation!.longitude,
             state: selectedState,
@@ -380,7 +304,7 @@ export default function CompleteProfileScreen() {
     // Progress Bar
     // ═══════════════════════════════
     const renderProgressBar = () => {
-        const stepLabels = ['Basic Info', 'Location', 'Verify Phone'];
+        const stepLabels = ['Basic Info', 'Location', 'Phone & Payment'];
         return (
             <View style={styles.progressContainer}>
                 <Text style={[styles.stepIndicator, { color: colors.textMuted }]}>
@@ -696,149 +620,96 @@ export default function CompleteProfileScreen() {
     );
 
     // ═══════════════════════════════
-    // Step 3: Phone Verification
+    // Step 3: Phone & Payment Info
     // ═══════════════════════════════
     const renderStep3 = () => (
         <Animated.View key="step3" entering={SlideInRight.duration(350)} exiting={SlideOutLeft.duration(250)} style={styles.stepContent}>
             <View style={styles.stepHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>Verify Phone Number</Text>
+                <Text style={[styles.stepTitle, { color: colors.text }]}>Phone & Payment</Text>
                 <Text style={[styles.stepSubtitle, { color: colors.textMuted }]}>
-                    We'll send a 6-digit code to verify your number
+                    Add your phone number and UPI ID for payments
                 </Text>
             </View>
 
-            {phoneVerified ? (
-                <Animated.View entering={FadeIn.duration(400)} style={styles.verifiedContainer}>
-                    <View style={[styles.verifiedCircle, { backgroundColor: colors.statusGreen + '20' }]}>
-                        <Ionicons name="checkmark-circle" size={64} color={colors.statusGreen} />
+            {/* Phone Number */}
+            <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                    Mobile Number <Text style={{ color: colors.accent }}>*</Text>
+                </Text>
+                <Text style={[styles.hint, { color: colors.textMuted }]}>
+                    Your primary contact number
+                </Text>
+                <View style={styles.phoneInputRow}>
+                    <View style={[styles.countryCode, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[styles.countryCodeText, { color: colors.text }]}>+91</Text>
                     </View>
-                    <Text style={[styles.verifiedTitle, { color: colors.text }]}>Phone Verified!</Text>
-                    <Text style={[styles.verifiedNumber, { color: colors.textSecondary }]}>
-                        +91 {rawDigits}
-                    </Text>
-                    <Text style={[styles.verifiedHint, { color: colors.textMuted }]}>
-                        Tap "Finish Setup" below to complete your profile
-                    </Text>
-                </Animated.View>
-            ) : (
-                <>
-                    <View style={styles.field}>
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>
-                            Mobile Number <Text style={{ color: colors.accent }}>*</Text>
-                        </Text>
-                        <View style={styles.phoneInputRow}>
-                            <View style={[styles.countryCode, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <Text style={[styles.countryCodeText, { color: colors.text }]}>+91</Text>
-                            </View>
-                            <View style={styles.phoneInputWrapper}>
-                                <AnimatedInput
-                                    placeholder="Enter 10 digit number"
-                                    value={phone}
-                                    onChangeText={(t: string) => {
-                                        const digits = t.replace(/\D/g, '').slice(0, 10);
-                                        setPhone(digits);
-                                        setError(null);
-                                        if (otpSent) {
-                                            setOtpSent(false);
-                                            setOtpCode(new Array(OTP_LENGTH).fill(''));
-                                            setResendTimer(0);
-                                        }
-                                    }}
-                                    keyboardType="number-pad"
-                                    maxLength={10}
-                                    editable={!otpSent}
-                                />
-                            </View>
-                        </View>
-                        {rawDigits.length > 0 && rawDigits.length < 10 && (
-                            <Text style={[styles.phoneCountHint, { color: colors.statusOrange }]}>
-                                {10 - rawDigits.length} more digit{10 - rawDigits.length !== 1 ? 's' : ''} needed
-                            </Text>
-                        )}
-                        {rawDigits.length === 10 && !(/^[6-9]/.test(rawDigits)) && (
-                            <Text style={[styles.phoneCountHint, { color: colors.statusRed }]}>
-                                Must start with 6, 7, 8, or 9
-                            </Text>
-                        )}
+                    <View style={styles.phoneInputWrapper}>
+                        <AnimatedInput
+                            placeholder="Enter 10 digit number"
+                            value={phone}
+                            onChangeText={(t: string) => {
+                                const digits = t.replace(/\D/g, '').slice(0, 10);
+                                setPhone(digits);
+                                setError(null);
+                            }}
+                            keyboardType="number-pad"
+                            maxLength={10}
+                        />
                     </View>
+                </View>
+                {rawDigits.length > 0 && rawDigits.length < 10 && (
+                    <Text style={[styles.phoneCountHint, { color: colors.statusOrange }]}>
+                        {10 - rawDigits.length} more digit{10 - rawDigits.length !== 1 ? 's' : ''} needed
+                    </Text>
+                )}
+                {rawDigits.length === 10 && !(/^[6-9]/.test(rawDigits)) && (
+                    <Text style={[styles.phoneCountHint, { color: colors.statusRed }]}>
+                        Must start with 6, 7, 8, or 9
+                    </Text>
+                )}
+                {isPhoneValid && (
+                    <Animated.View entering={FadeIn.duration(200)} style={styles.fieldSuccessRow}>
+                        <Ionicons name="checkmark-circle" size={16} color={colors.statusGreen} />
+                        <Text style={[styles.fieldSuccessText, { color: colors.statusGreen }]}>Valid number</Text>
+                    </Animated.View>
+                )}
+            </View>
 
-                    {!otpSent && (
-                        <TouchableOpacity
-                            style={[
-                                styles.sendOtpBtn,
-                                { backgroundColor: isPhoneValid ? colors.accent : colors.card },
-                            ]}
-                            onPress={handleSendOtp}
-                            disabled={otpLoading || !isPhoneValid}
-                            activeOpacity={0.8}
-                        >
-                            {otpLoading ? (
-                                <ActivityIndicator color="#FFF" size="small" />
-                            ) : (
-                                <>
-                                    <Ionicons name="send" size={18} color={isPhoneValid ? '#FFF' : colors.textMuted} />
-                                    <Text style={[styles.sendOtpBtnText, {
-                                        color: isPhoneValid ? '#FFF' : colors.textMuted,
-                                    }]}>Send OTP</Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    )}
+            {/* UPI ID */}
+            <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                    UPI ID <Text style={{ color: colors.accent }}>*</Text>
+                </Text>
+                <Text style={[styles.hint, { color: colors.textMuted }]}>
+                    Posters will use this to pay you directly
+                </Text>
+                <AnimatedInput
+                    placeholder="e.g. yourname@upi"
+                    value={upiId}
+                    onChangeText={(t: string) => { setUpiId(t.trim()); setError(null); }}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                />
+                {upiId.length > 0 && !isUpiValid && (
+                    <Text style={[styles.phoneCountHint, { color: colors.statusOrange }]}>
+                        UPI ID must contain @ (e.g. name@paytm)
+                    </Text>
+                )}
+                {isUpiValid && (
+                    <Animated.View entering={FadeIn.duration(200)} style={styles.fieldSuccessRow}>
+                        <Ionicons name="checkmark-circle" size={16} color={colors.statusGreen} />
+                        <Text style={[styles.fieldSuccessText, { color: colors.statusGreen }]}>Valid UPI ID</Text>
+                    </Animated.View>
+                )}
+            </View>
 
-                    {otpSent && (
-                        <Animated.View entering={FadeIn.duration(400)} style={styles.otpSection}>
-                            <Text style={[styles.otpLabel, { color: colors.textSecondary }]}>
-                                Enter the 6-digit code sent to{' '}
-                                <Text style={{ fontFamily: FontFamily.semiBold, color: colors.text }}>
-                                    +91 {rawDigits}
-                                </Text>
-                            </Text>
-                            <View style={styles.otpRow}>
-                                {otpCode.map((digit, index) => (
-                                    <TextInput
-                                        key={index}
-                                        ref={(ref) => { otpInputRefs.current[index] = ref; }}
-                                        style={[
-                                            styles.otpBox,
-                                            {
-                                                backgroundColor: colors.inputBackground,
-                                                borderColor: digit ? colors.accent : colors.border,
-                                                color: colors.text,
-                                            },
-                                        ]}
-                                        value={digit}
-                                        onChangeText={(t) => handleOtpChange(t, index)}
-                                        onKeyPress={({ nativeEvent }) => handleOtpKeyPress(nativeEvent.key, index)}
-                                        keyboardType="number-pad"
-                                        maxLength={1}
-                                        textContentType="oneTimeCode"
-                                        autoComplete="sms-otp"
-                                        selectTextOnFocus
-                                    />
-                                ))}
-                            </View>
-                            {verifyLoading && (
-                                <ActivityIndicator color={colors.accent} size="small" style={{ marginTop: Spacing.sm }} />
-                            )}
-                            <View style={styles.resendRow}>
-                                <Text style={[styles.resendText, { color: colors.textMuted }]}>
-                                    Didn't receive the code?
-                                </Text>
-                                <TouchableOpacity
-                                    onPress={handleSendOtp}
-                                    disabled={resendTimer > 0}
-                                >
-                                    <Text style={[styles.resendAction, {
-                                        color: resendTimer > 0 ? colors.textMuted : colors.accent,
-                                    }]}>
-                                        {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend OTP'}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </Animated.View>
-                    )}
-                </>
-            )}
+            {/* Info note */}
+            <View style={[styles.infoNote, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.accent} />
+                <Text style={[styles.infoNoteText, { color: colors.textSecondary }]}>
+                    Your UPI ID will be shared with task posters so they can pay you for completed tasks.
+                </Text>
+            </View>
         </Animated.View>
     );
 
@@ -900,10 +771,10 @@ export default function CompleteProfileScreen() {
                     <TouchableOpacity
                         style={[
                             styles.nextButton,
-                            { backgroundColor: phoneVerified ? colors.accent : colors.card },
+                            { backgroundColor: canFinish ? colors.accent : colors.card },
                         ]}
                         onPress={handleFinishProfile}
-                        disabled={!phoneVerified || finalLoading}
+                        disabled={!canFinish || finalLoading}
                         activeOpacity={0.8}
                     >
                         {finalLoading ? (
@@ -913,10 +784,10 @@ export default function CompleteProfileScreen() {
                                 <Ionicons
                                     name="checkmark-circle"
                                     size={20}
-                                    color={phoneVerified ? '#FFF' : colors.textMuted}
+                                    color={canFinish ? '#FFF' : colors.textMuted}
                                 />
                                 <Text style={[styles.nextButtonText, {
-                                    color: phoneVerified ? '#FFF' : colors.textMuted,
+                                    color: canFinish ? '#FFF' : colors.textMuted,
                                 }]}>Finish Setup</Text>
                             </>
                         )}
@@ -1239,81 +1110,33 @@ const makeStyles = (colors: any) =>
             fontFamily: FontFamily.medium,
             marginLeft: 4,
         },
-        sendOtpBtn: {
+        // ── Field Success Indicator ──
+        fieldSuccessRow: {
             flexDirection: 'row',
-            height: 48,
-            borderRadius: BorderRadius.md,
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: Spacing.sm,
+            gap: 4,
+            marginTop: 4,
+            marginLeft: 4,
         },
-        sendOtpBtnText: {
-            fontSize: FontSize.md,
-            fontFamily: FontFamily.bold,
+        fieldSuccessText: {
+            fontSize: FontSize.xs,
+            fontFamily: FontFamily.medium,
         },
 
-        // ── OTP ──
-        otpSection: { gap: Spacing.md },
-        otpLabel: {
+        // ── Info Note ──
+        infoNote: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: Spacing.sm,
+            padding: Spacing.md,
+            borderRadius: BorderRadius.md,
+            borderWidth: 1,
+        },
+        infoNoteText: {
+            flex: 1,
             fontSize: FontSize.sm,
             fontFamily: FontFamily.regular,
             lineHeight: 20,
-        },
-        otpRow: {
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            gap: Spacing.sm,
-        },
-        otpBox: {
-            flex: 1,
-            height: 52,
-            borderRadius: BorderRadius.md,
-            borderWidth: 1.5,
-            fontSize: FontSize.xl,
-            fontFamily: FontFamily.bold,
-            textAlign: 'center',
-        },
-        resendRow: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: Spacing.sm,
-        },
-        resendText: {
-            fontSize: FontSize.sm,
-            fontFamily: FontFamily.regular,
-        },
-        resendAction: {
-            fontSize: FontSize.sm,
-            fontFamily: FontFamily.bold,
-        },
-
-        // ── Verified ──
-        verifiedContainer: {
-            alignItems: 'center',
-            paddingVertical: Spacing.xxl,
-            gap: Spacing.md,
-        },
-        verifiedCircle: {
-            width: 100,
-            height: 100,
-            borderRadius: 50,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: Spacing.sm,
-        },
-        verifiedTitle: {
-            fontSize: FontSize.xxl,
-            fontFamily: FontFamily.bold,
-        },
-        verifiedNumber: {
-            fontSize: FontSize.lg,
-            fontFamily: FontFamily.medium,
-        },
-        verifiedHint: {
-            fontSize: FontSize.sm,
-            fontFamily: FontFamily.regular,
-            textAlign: 'center',
         },
 
         // ── Error ──

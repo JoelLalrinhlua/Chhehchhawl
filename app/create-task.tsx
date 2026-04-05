@@ -13,6 +13,7 @@
  */
 
 import { AnimatedInput } from '@/components/AnimatedInput';
+import { CustomAlert, type AlertButton } from '@/components/CustomAlert';
 import MapLocationPicker from '@/components/MapLocationPicker';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -85,6 +86,22 @@ export default function CreateTaskScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+
+    // ── Alert State ──
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        buttons?: AlertButton[];
+    }>({ visible: false, title: '', message: '' });
+
+    const showAlert = (title: string, message: string, buttons?: AlertButton[]) => {
+        setAlertConfig({ visible: true, title, message, buttons });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig((prev) => ({ ...prev, visible: false }));
+    };
 
     // ── Form State ──
     const [step, setStep] = useState(0);
@@ -165,17 +182,17 @@ export default function CreateTaskScreen() {
 
     const pickMedia = async (type: 'image' | 'video') => {
         if (type === 'image' && imageCount >= MAX_IMAGES) {
-            Alert.alert('Limit reached', `You can upload up to ${MAX_IMAGES} images.`);
+            showAlert('Limit reached', `You can upload up to ${MAX_IMAGES} images.`);
             return;
         }
         if (type === 'video' && videoCount >= MAX_VIDEOS) {
-            Alert.alert('Limit reached', `You can upload up to ${MAX_VIDEOS} videos.`);
+            showAlert('Limit reached', `You can upload up to ${MAX_VIDEOS} videos.`);
             return;
         }
 
         const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permResult.granted) {
-            Alert.alert('Permission required', 'Please grant access to your media library.');
+            showAlert('Permission required', 'Please grant access to your media library.');
             return;
         }
 
@@ -194,7 +211,7 @@ export default function CreateTaskScreen() {
         const newItems: MediaItem[] = [];
         for (const asset of result.assets) {
             if (type === 'video' && asset.fileSize && asset.fileSize > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
-                Alert.alert('File too large', `Video must be less than ${MAX_VIDEO_SIZE_MB}MB.`);
+                showAlert('File too large', `Video must be less than ${MAX_VIDEO_SIZE_MB}MB.`);
                 continue;
             }
             newItems.push({
@@ -317,7 +334,7 @@ export default function CreateTaskScreen() {
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Location permission is needed to detect your position.');
+                showAlert('Permission Required', 'Location permission is needed to detect your position.');
                 setLocationDetecting(false);
                 return;
             }
@@ -338,7 +355,7 @@ export default function CreateTaskScreen() {
                 setDetectedAddress('Detected Location');
             }
         } catch {
-            Alert.alert('Location Error', 'Could not get your location. Please enter the address manually.');
+            showAlert('Location Error', 'Could not get your location. Please enter the address manually.');
         }
         setLocationDetecting(false);
     };
@@ -391,7 +408,7 @@ export default function CreateTaskScreen() {
     // ── Submission ──
     const handleSubmitPress = () => {
         if (!isFormValid) {
-            Alert.alert('Incomplete Form', 'Please fill in all required fields (Title, Description, and a valid Budget between ₹50 - ₹5,500).');
+            showAlert('Incomplete Form', 'Please fill in all required fields (Title, Description, and a valid Budget between ₹50 - ₹5,500).');
             return;
         }
         setSummaryVisible(true);
@@ -437,14 +454,14 @@ export default function CreateTaskScreen() {
                 if (mediaPaths.length > 0) {
                     await supabase.storage.from('task-media').remove(mediaPaths).catch(() => {});
                 }
-                Alert.alert('Error', taskResult.error);
+                showAlert('Error', taskResult.error);
             } else {
-                Alert.alert('Success', 'Your task has been created successfully!', [
+                showAlert('Success', 'Your task has been created successfully!', [
                     { text: 'OK', onPress: () => router.back() },
                 ]);
             }
         } catch (err: any) {
-            Alert.alert(
+            showAlert(
                 'Upload Error',
                 err.message || 'Failed to upload media. Task was not created. Please try again.'
             );
@@ -983,6 +1000,14 @@ export default function CreateTaskScreen() {
 
             {/* Modals */}
             {renderSummaryModal()}
+
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                buttons={alertConfig.buttons}
+                onDismiss={hideAlert}
+            />
         </SafeAreaView>
     );
 }

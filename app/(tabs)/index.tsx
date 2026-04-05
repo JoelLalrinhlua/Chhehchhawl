@@ -9,6 +9,7 @@
 import { NotificationSheet } from '@/components/NotificationSheet';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTasks } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useUnreadNotificationCountQuery } from '@/hooks/use-notification-queries';
 import { queryClient } from '@/lib/query-client';
@@ -16,13 +17,15 @@ import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     Image,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
+    ScrollView,
+    Dimensions,
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -81,6 +84,7 @@ const DashboardCard = ({
 export default function DashboardScreen() {
     const { user, profile } = useAuth();
     const { colors } = useTheme();
+    const { getMyPosts, getMyTasks } = useTasks();
     const [notifVisible, setNotifVisible] = useState(false);
 
     const { data: unreadCount = 0 } = useUnreadNotificationCountQuery(user?.id);
@@ -113,6 +117,21 @@ export default function DashboardScreen() {
     }, [user?.id]);
 
     const firstName = profile?.full_name?.split(' ')[0] || 'User';
+
+    const { myPosts, tasksCompleted, totalEarned, tasksInProgress } = useMemo(() => {
+        const posts = getMyPosts(user?.id || '');
+        const tasks = getMyTasks(user?.id || '');
+        const completed = tasks.filter(t => t.status === 'completed');
+        const inProgress = tasks.filter(t => t.status === 'in-progress' || t.status === 'assigned').length;
+        const totalEarnings = completed.reduce((sum, task) => sum + task.budget, 0);
+
+        return {
+            myPosts: posts,
+            tasksCompleted: completed.length,
+            totalEarned: totalEarnings,
+            tasksInProgress: inProgress
+        };
+    }, [user?.id, getMyPosts, getMyTasks]);
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -151,7 +170,11 @@ export default function DashboardScreen() {
                 </View>
             </View>
 
-            <View style={styles.content}>
+            <ScrollView 
+                style={styles.content} 
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: Spacing.huge }}
+            >
                 {/* Welcome Section */}
                 <Animated.View style={styles.welcomeSection}>
                     <Text style={[styles.welcomeText, { color: colors.text }]}>Welcome back,</Text>
@@ -185,7 +208,39 @@ export default function DashboardScreen() {
                         delay={300}
                     />
                 </View>
-            </View>
+
+                {/* Spacer to push stats down */}
+                <View style={{ height: Dimensions.get('window').height * 0.3 }} />
+
+                {/* Stats Section */}
+                <Animated.View style={styles.statsSection}>
+                    <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your Stats</Text>
+                    <View style={styles.statsRow}>
+                        <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="send" size={24} color={colors.accent} />
+                            <Text style={[styles.statNumber, { color: colors.text }]}>{myPosts.length}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Tasks Posted</Text>
+                        </View>
+                        <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="checkmark-done" size={24} color={colors.statusGreen} />
+                            <Text style={[styles.statNumber, { color: colors.text }]}>{tasksCompleted}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Tasks Completed</Text>
+                        </View>
+                    </View>
+                    <View style={[styles.statsRow, { marginTop: Spacing.md }]}>
+                        <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="wallet" size={24} color={colors.statusOrange} />
+                            <Text style={[styles.statNumber, { color: colors.text }]}>₹{totalEarned}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Total Earned</Text>
+                        </View>
+                        <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="construct" size={24} color={colors.statusRed} />
+                            <Text style={[styles.statNumber, { color: colors.text }]}>{tasksInProgress}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textMuted }]}>In Progress</Text>
+                        </View>
+                    </View>
+                </Animated.View>
+            </ScrollView>
 
             <NotificationSheet
                 visible={notifVisible}
@@ -316,5 +371,40 @@ const styles = StyleSheet.create({
         fontSize: FontSize.sm,
         fontFamily: FontFamily.regular,
         lineHeight: 20,
+    },
+    statsSection: {
+        paddingTop: Spacing.md,
+    },
+    sectionTitle: {
+        fontSize: FontSize.lg,
+        fontFamily: FontFamily.bold,
+        marginBottom: Spacing.md,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        gap: Spacing.md,
+    },
+    statBox: {
+        flex: 1,
+        borderRadius: BorderRadius.xl,
+        borderWidth: 1,
+        padding: Spacing.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    statNumber: {
+        fontSize: FontSize.xxxl,
+        fontFamily: FontFamily.bold,
+        marginTop: Spacing.sm,
+        marginBottom: 4,
+    },
+    statLabel: {
+        fontSize: FontSize.sm,
+        fontFamily: FontFamily.medium,
     },
 });

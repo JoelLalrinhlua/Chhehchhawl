@@ -761,7 +761,7 @@ export function ChatRoomSheet({
         <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
             <KeyboardAvoidingView
                 style={[styles.container, { backgroundColor: colors.background }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 keyboardVerticalOffset={0}
             >
                 {/* Header */}

@@ -8,6 +8,7 @@
  */
 
 import { ApplicantListSheet } from '@/components/ApplicantListSheet';
+import { EditTaskSheet } from '@/components/EditTaskSheet';
 import { TaskCard } from '@/components/TaskCard';
 import { TaskDetailSheet } from '@/components/TaskDetailSheet';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
@@ -36,7 +37,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const TABS = ['My Posts', 'My Tasks'];
+const TABS = ['My Tasks', 'My Posts'];
 
 export default function MyTasksScreen() {
     const { colors } = useTheme();
@@ -69,7 +70,7 @@ export default function MyTasksScreen() {
 
     const unifiedMyTasks = useMemo<MyTaskItem[]>(() => {
         const assigned: MyTaskItem[] = myTasks.map((t) => ({ ...t, _kind: 'assigned' as const }));
-        const applied: MyTaskItem[] = appliedTasks.map((t) => ({ ...t, _kind: 'applied' as const }));
+        const applied = appliedTasks.map((t) => ({ ...t, _kind: 'applied' as const }));
         // Applied-pending first, then assigned tasks, then applied-rejected at end
         const pending = applied.filter((t) => t.applicationStatus === 'pending');
         const rejected = applied.filter((t) => t.applicationStatus === 'rejected');
@@ -78,7 +79,7 @@ export default function MyTasksScreen() {
 
     // Fetch applicant counts when viewing My Posts
     useEffect(() => {
-        if (activeTab === 0 && myPosts.length > 0) {
+        if (activeTab === 1 && myPosts.length > 0) {
             refreshApplicantCounts(myPosts.map((t) => t.id));
         }
     }, [activeTab, myPosts.length]);
@@ -212,35 +213,30 @@ export default function MyTasksScreen() {
                             </View>
                         </View>
 
-                        <View style={styles.postBottomRow}>
-                            <Text
-                                style={[
-                                    styles.postBudget,
-                                    { color: colors.accent, fontFamily: FontFamily.bold },
-                                ]}
-                            >
-                                ₹{item.budget}
-                            </Text>
-
-                            <Pressable
-                                style={[
-                                    styles.applicantBadge,
-                                    {
-                                        backgroundColor:
-                                            count > 0
-                                                ? colors.accent + '15'
-                                                : colors.card,
-                                        borderColor:
-                                            count > 0
-                                                ? colors.accent + '30'
-                                                : colors.border,
-                                    },
-                                ]}
-                                onPress={() => setApplicantSheetTask(item)}
-                            >
+                        <Pressable
+                            style={[
+                                styles.applicantBadge,
+                                {
+                                    marginTop: Spacing.sm,
+                                    justifyContent: 'space-between',
+                                    borderRadius: BorderRadius.md,
+                                    paddingVertical: Spacing.sm,
+                                    backgroundColor:
+                                        count > 0
+                                            ? colors.accent + '15'
+                                            : colors.card,
+                                    borderColor:
+                                        count > 0
+                                            ? colors.accent + '30'
+                                            : colors.border,
+                                },
+                            ]}
+                            onPress={() => setApplicantSheetTask(item)}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
                                 <Ionicons
                                     name="people"
-                                    size={14}
+                                    size={16}
                                     color={
                                         count > 0
                                             ? colors.accent
@@ -261,13 +257,14 @@ export default function MyTasksScreen() {
                                 >
                                     {count} {count === 1 ? 'Applicant' : 'Applicants'}
                                 </Text>
-                                <Ionicons
-                                    name="chevron-forward"
-                                    size={14}
-                                    color={colors.textMuted}
-                                />
-                            </Pressable>
-                        </View>
+                            </View>
+                            <Ionicons
+                                name="chevron-forward"
+                                size={16}
+                                color={colors.textMuted}
+                            />
+                        </Pressable>
+
 
                         <Text
                             style={[
@@ -295,7 +292,7 @@ export default function MyTasksScreen() {
 
     // ── Application status config ──
     const getAppStatusConfig = useCallback(
-        (appStatus: 'pending' | 'rejected') => {
+        (appStatus: any) => {
             if (appStatus === 'pending') {
                 return { label: 'Pending', color: colors.statusOrange, icon: 'time' as const };
             }
@@ -360,15 +357,7 @@ export default function MyTasksScreen() {
                             </Text>
                         </View>
                     </View>
-                    <View style={styles.postBottomRow}>
-                        <Text
-                            style={[
-                                styles.postBudget,
-                                { color: colors.accent, fontFamily: FontFamily.bold },
-                            ]}
-                        >
-                            ₹{item.budget}
-                        </Text>
+                    <View style={[styles.postBottomRow, { justifyContent: 'flex-end' }]}>
                         {isApplied && (
                             <Text
                                 style={[
@@ -396,7 +385,7 @@ export default function MyTasksScreen() {
     const renderEmpty = () => (
         <View style={styles.emptyContainer}>
             <Ionicons
-                name={activeTab === 0 ? 'create-outline' : 'briefcase-outline'}
+                name={activeTab === 1 ? 'create-outline' : 'briefcase-outline'}
                 size={48}
                 color={colors.textMuted}
             />
@@ -406,7 +395,7 @@ export default function MyTasksScreen() {
                     { color: colors.textMuted, fontFamily: FontFamily.regular },
                 ]}
             >
-                {activeTab === 0
+                {activeTab === 1
                     ? "You haven't posted any tasks yet"
                     : 'No tasks or applications yet'}
             </Text>
@@ -469,7 +458,7 @@ export default function MyTasksScreen() {
             </View>
 
             {/* Content */}
-            {activeTab === 0 ? (
+            {activeTab === 1 ? (
                 // My Posts — structured list
                 <FlatList
                     key="my-posts-list"

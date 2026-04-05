@@ -9,6 +9,7 @@
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { CustomAlert } from '@/components/CustomAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -22,11 +23,16 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Linking,
+    Modal,
 } from 'react-native';
+import { useState } from 'react';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
-    withTiming
+    withTiming,
+    ZoomIn,
+    ZoomOut
 } from 'react-native-reanimated';
 
 export default function ProfileScreen() {
@@ -39,24 +45,25 @@ export default function ProfileScreen() {
         transform: [{ scale: logoutScale.value }],
     }));
 
+    const [logoutAlertVisible, setLogoutAlertVisible] = useState(false);
+    const [supportModalVisible, setSupportModalVisible] = useState(false);
+
     const handleLogout = () => {
-        Alert.alert(
-            'Sign Out',
-            'Are you sure you want to sign out?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Sign Out',
-                    style: 'destructive',
-                    onPress: async () => {
-                        logoutScale.value = withTiming(0.95, { duration: 80 }, () => {
-                            logoutScale.value = withTiming(1, { duration: 80 });
-                        });
-                        await signOut();
-                    },
-                },
-            ]
-        );
+        setLogoutAlertVisible(true);
+    };
+
+    const handleSupportDevs = () => {
+        Linking.openURL('upi://pay?pa=joelkizyking@oksbi&pn=Chhehchhawl%20Developer&cu=INR').catch(() => {
+            Alert.alert('Error', 'No UPI payment app found on this device.');
+        });
+    };
+
+    const confirmLogout = async () => {
+        setLogoutAlertVisible(false);
+        logoutScale.value = withTiming(0.95, { duration: 80 }, () => {
+            logoutScale.value = withTiming(1, { duration: 80 });
+        });
+        await signOut();
     };
 
     const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User';
@@ -216,6 +223,18 @@ export default function ProfileScreen() {
                         </View>
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
+                    <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={() => setSupportModalVisible(true)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.settingLeft}>
+                            <Ionicons name="heart-outline" size={22} color={colors.textSecondary} />
+                            <Text style={[styles.settingText, { color: colors.text }]}>Support the Devs</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -237,6 +256,60 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </Animated.View>
             </View>
+
+            <CustomAlert
+                visible={logoutAlertVisible}
+                title="Sign Out"
+                message="Are you sure you want to sign out?"
+                onDismiss={() => setLogoutAlertVisible(false)}
+                buttons={[
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Sign Out', style: 'destructive', onPress: confirmLogout }
+                ]}
+            />
+
+            {/* Support Devs Modal */}
+            <Modal
+                visible={supportModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setSupportModalVisible(false)}
+            >
+                <View style={{ flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }}>
+                    <Animated.View 
+                        entering={ZoomIn.duration(200).springify()}
+                        exiting={ZoomOut.duration(200)}
+                        style={{ width: '100%', maxWidth: 400, backgroundColor: colors.surface, borderRadius: BorderRadius.xl, padding: Spacing.xl, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10 }}
+                    >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md }}>
+                            <Text style={{ fontSize: FontSize.xl, fontFamily: FontFamily.bold, color: colors.text }}>Support the Devs</Text>
+                            <TouchableOpacity onPress={() => setSupportModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                                <Ionicons name="close" size={24} color={colors.textMuted} />
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={{ color: colors.textSecondary, fontSize: FontSize.md, fontFamily: FontFamily.regular, marginBottom: Spacing.xl, lineHeight: 22 }}>
+                            If building Chhehchhawl has brought value to you and you want to help keep the servers running and fuel future updates, please consider leaving a tip! Every little bit helps. 🚀
+                        </Text>
+                        <TouchableOpacity
+                            style={{
+                                backgroundColor: colors.accent,
+                                borderRadius: BorderRadius.md,
+                                paddingVertical: Spacing.md,
+                                alignItems: 'center',
+                                flexDirection: 'row',
+                                justifyContent: 'center',
+                            }}
+                            onPress={handleSupportDevs}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="heart" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                            <Text style={{ color: '#FFF', fontFamily: FontFamily.bold, fontSize: FontSize.md }}>
+                                Support via UPI
+                            </Text>
+                        </TouchableOpacity>
+                    </Animated.View>
+                </View>
+            </Modal>
         </ScrollView>
     );
 }

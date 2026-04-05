@@ -1,10 +1,9 @@
 /**
  * login.tsx — Authentication screen.
  *
- * Supports three sign-in methods:
+ * Supports two sign-in methods:
  *  1. Email + password (with registration toggle)
  *  2. Google OAuth (opens in-app browser)
- *  3. Phone OTP (navigates to /phone-auth)
  *
  * Includes real-time email validation and password-strength feedback.
  */
@@ -265,36 +264,29 @@ export default function LoginScreen() {
 
                     {/* Google Sign-In */}
                     <TouchableOpacity
-                        style={[styles.googleButton, { borderColor: colors.border }]}
+                        style={styles.googleButton}
                         onPress={handleGoogleSignIn}
                         disabled={googleLoading}
                         activeOpacity={0.8}
                     >
                         {googleLoading ? (
-                            <ActivityIndicator color="#4285F4" size="small" />
+                            <ActivityIndicator color="#1F1F1F" size="small" />
                         ) : (
                             <>
                                 <View style={styles.googleIconContainer}>
-                                    <Text style={styles.googleG}>G</Text>
+                                    <Image
+                                        source={require('@/assets/images/google-icon-logo-svgrepo-com.svg')}
+                                        style={styles.googleLogo}
+                                        contentFit="contain"
+                                    />
                                 </View>
-                                <Text style={[styles.googleText, { color: colors.text }]}>
-                                    Continue with Google
+                                <Text style={styles.googleText}>
+                                    Sign in with Google
                                 </Text>
                             </>
                         )}
                     </TouchableOpacity>
 
-                    {/* Phone auth */}
-                    <TouchableOpacity
-                        style={[styles.phoneButton, { borderColor: colors.border }]}
-                        onPress={() => router.push('/phone-auth')}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="call" size={18} color="#28d066" />
-                        <Text style={[styles.phoneText, { color: colors.textSecondary }]}>
-                            Sign in with Phone
-                        </Text>
-                    </TouchableOpacity>
 
                     {/* Toggle Sign Up / Sign In */}
                     <TouchableOpacity
@@ -326,20 +318,19 @@ const makeStyles = (colors: any) =>
             flexGrow: 1,
             justifyContent: 'center',
             paddingHorizontal: Spacing.xl,
-            paddingBottom: Spacing.huge,
         },
         logoSection: {
             alignItems: 'center',
             marginBottom: Spacing.xl,
         },
         logo: {
-            width: 90,
-            height: 90,
+            width: 120,
+            height: 120,
             marginBottom: Spacing.md,
         },
         titleImage: {
-            width: SCREEN_WIDTH * 0.55,
-            height: 36,
+            width: SCREEN_WIDTH * 0.65,
+            height: 44,
             marginBottom: Spacing.md,
         },
         tagline: {
@@ -350,6 +341,7 @@ const makeStyles = (colors: any) =>
         },
         formSection: {
             gap: Spacing.md,
+            paddingHorizontal: 16, // Squeezes inputs to be more in the middle
         },
         errorContainer: {
             flexDirection: 'row',
@@ -396,26 +388,27 @@ const makeStyles = (colors: any) =>
             alignItems: 'center',
             justifyContent: 'center',
             height: 52,
-            borderRadius: BorderRadius.lg,
-            borderWidth: 1,
+            borderRadius: 100, // Pill shape
             backgroundColor: '#FFFFFF',
-            gap: 12,
+            borderWidth: 1,
+            paddingHorizontal: 16,
+            marginBottom: Spacing.sm,
+            borderColor: '#747775', // Standard Google outline color
         },
         googleIconContainer: {
-            width: 24,
-            height: 24,
-            borderRadius: 12,
+            position: 'absolute',
+            left: 16,
             alignItems: 'center',
             justifyContent: 'center',
         },
-        googleG: {
-            fontSize: 18,
-            fontWeight: '700',
-            color: '#4285F4',
+        googleLogo: {
+            width: 24,
+            height: 24,
         },
         googleText: {
             fontSize: FontSize.md,
-            fontFamily: FontFamily.semiBold,
+            fontFamily: FontFamily.medium, // Google uses Roboto Medium
+            color: '#1F1F1F',
         },
         phoneButton: {
             flexDirection: 'row',

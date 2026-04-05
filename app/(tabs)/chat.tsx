@@ -122,7 +122,7 @@ export default function ChatScreen() {
         };
     }, [user?.id]);
 
-    // Split rooms into active vs completed, filtered by search
+    // Split rooms into active vs completed, filtered by search, and auto-delete >30 days completed chats
     const { activeRooms, completedRooms } = useMemo(() => {
         const q = search.trim().toLowerCase();
         const filtered = q
@@ -133,9 +133,32 @@ export default function ChatScreen() {
             )
             : rooms;
 
+        const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        const active: typeof rooms = [];
+        const completed: typeof rooms = [];
+
+        filtered.forEach((r) => {
+            if (r.task_status !== 'completed') {
+                active.push(r);
+            } else {
+                // Determine the most recent date to check against
+                const dateToCheck = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
+                
+                // If it's a completed chat and hasn't been inactive for more than 30 days, we keep it
+                if (dateToCheck && (now - dateToCheck <= THIRTY_DAYS_MS)) {
+                    completed.push(r);
+                } else if (!dateToCheck) {
+                    // Fallback to push if we somehow don't have a date
+                    completed.push(r);
+                }
+            }
+        });
+
         return {
-            activeRooms: filtered.filter((r) => r.task_status !== 'completed'),
-            completedRooms: filtered.filter((r) => r.task_status === 'completed'),
+            activeRooms: active,
+            completedRooms: completed,
         };
     }, [rooms, search]);
 
@@ -364,7 +387,7 @@ export default function ChatScreen() {
             if (item.type === 'completed-header') {
                 return (
                     <TouchableOpacity
-                        style={[styles.completedHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        style={[styles.completedHeader]}
                         onPress={() => setCompletedExpanded((v) => !v)}
                         activeOpacity={0.7}
                     >
@@ -662,16 +685,16 @@ const styles = StyleSheet.create({
     completedHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.sm + 2,
-        borderRadius: BorderRadius.lg,
-        borderWidth: 1,
+        justifyContent: 'center',
+        paddingVertical: Spacing.sm,
+        marginTop: Spacing.xs,
+        marginBottom: Spacing.xs,
+        gap: Spacing.xs,
     },
     completedHeaderLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: Spacing.sm,
+        gap: 6,
     },
     completedHeaderText: {
         fontSize: FontSize.sm,

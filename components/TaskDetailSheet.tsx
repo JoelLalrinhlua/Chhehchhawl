@@ -11,6 +11,7 @@
  * Dismissal is handled via a pan-down gesture on the handle or a close button.
  */
 
+import { EditTaskSheet } from '@/components/EditTaskSheet';
 import { MediaCarousel } from '@/components/MediaCarousel';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useApplications } from '@/contexts/ApplicationContext';
@@ -25,15 +26,21 @@ import {
     Alert,
     Dimensions,
     Modal,
+    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     View,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
+    FadeIn,
+    FadeOut,
+    ZoomIn,
+    ZoomOut,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
@@ -72,6 +79,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
     const [applyMessage, setApplyMessage] = useState('');
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [completionLoading, setCompletionLoading] = useState(false);
+    const [editingTask, setEditingTask] = useState<Task | null>(null);
 
     const isOwnTask = user?.id === task.created_by;
     const isAssignedTasker = user?.id === task.assigned_to;
@@ -134,10 +142,6 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
     }));
 
     const handleApply = async () => {
-        if (!showMessageInput) {
-            setShowMessageInput(true);
-            return;
-        }
         setApplyLoading(true);
         const result = await applyForTask(task.id, applyMessage || undefined);
         setApplyLoading(false);
@@ -336,22 +340,42 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
 
             return (
                 <View style={styles.ownPostFooter}>
-                    <View
-                        style={[
-                            styles.ownPostLabel,
-                            { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-                        ]}
-                    >
-                        <Ionicons name="create-outline" size={16} color={colors.textMuted} />
-                        <Text
+                    {task.status === 'open' ? (
+                        <Pressable
                             style={[
-                                styles.applyText,
-                                { color: colors.textMuted, fontFamily: FontFamily.medium, marginLeft: 6, fontSize: FontSize.md },
+                                styles.ownPostLabel,
+                                { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+                            ]}
+                            onPress={() => setEditingTask(task)}
+                        >
+                            <Ionicons name="create-outline" size={16} color={colors.text} />
+                            <Text
+                                style={[
+                                    styles.applyText,
+                                    { color: colors.text, fontFamily: FontFamily.semiBold, marginLeft: 6, fontSize: FontSize.md },
+                                ]}
+                            >
+                                Edit Task
+                            </Text>
+                        </Pressable>
+                    ) : (
+                        <View
+                            style={[
+                                styles.ownPostLabel,
+                                { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
                             ]}
                         >
-                            Your Post
-                        </Text>
-                    </View>
+                            <Ionicons name="create-outline" size={16} color={colors.textMuted} />
+                            <Text
+                                style={[
+                                    styles.applyText,
+                                    { color: colors.textMuted, fontFamily: FontFamily.medium, marginLeft: 6, fontSize: FontSize.md },
+                                ]}
+                            >
+                                Your Post
+                            </Text>
+                        </View>
+                    )}
                     {onDelete && task.status === 'open' && (
                         <Pressable
                             style={[
@@ -501,16 +525,12 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
         return (
             <Pressable
                 style={[styles.applyButton, { backgroundColor: colors.accent }]}
-                onPress={handleApply}
+                onPress={() => setShowMessageInput(true)}
                 disabled={applyLoading}
             >
-                {applyLoading ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                    <Text style={[styles.applyText, { fontFamily: FontFamily.bold }]}>
-                        {showMessageInput ? 'Submit Application' : 'Apply for Task'}
-                    </Text>
-                )}
+                <Text style={[styles.applyText, { fontFamily: FontFamily.bold }]}>
+                    Apply for Task
+                </Text>
             </Pressable>
         );
     };
@@ -529,21 +549,31 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                 <Animated.View style={[styles.backdrop, { backgroundColor: colors.overlay }, backdropAnimatedStyle]}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
                 </Animated.View>
-                <GestureDetector gesture={panGesture}>
-                    <Animated.View
-                        style={[
-                            styles.sheet,
-                            {
-                                backgroundColor: colors.surface,
-                                height: SHEET_HEIGHT,
-                                paddingBottom: insets.bottom,
-                            },
-                            sheetAnimatedStyle,
-                        ]}
-                    >
-                        <View style={styles.handleArea}>
-                            <View style={[styles.handle, { backgroundColor: colors.textMuted + '80' }]} />
-                        </View>
+                <Animated.View
+                    style={[
+                        styles.sheet,
+                        {
+                            backgroundColor: colors.surface,
+                            height: SHEET_HEIGHT,
+                            paddingBottom: insets.bottom,
+                        },
+                        sheetAnimatedStyle,
+                    ]}
+                >
+                    <View style={styles.headerContainer}>
+                        <GestureDetector gesture={panGesture}>
+                            <View style={styles.handleArea}>
+                                <View style={[styles.handle, { backgroundColor: colors.textMuted + '80' }]} />
+                            </View>
+                        </GestureDetector>
+                        <Pressable 
+                            style={styles.closeButtonAbsolute} 
+                            onPress={onClose}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            <Ionicons name="close-circle" size={26} color={colors.textMuted + '90'} />
+                        </Pressable>
+                    </View>
 
                     <ScrollView
                         showsVerticalScrollIndicator={true}
@@ -611,32 +641,12 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             </Text>
                         )}
 
-                        {/* 3. Budget */}
-                        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={styles.infoRow}>
-                                <View style={styles.infoLabelRow}>
-                                    <Ionicons name="cash-outline" size={16} color={colors.accent} />
-                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
-                                        Budget
-                                    </Text>
-                                </View>
-                                <Text style={[styles.infoValue, { color: colors.accent, fontFamily: FontFamily.bold }]}>
-                                    ₹{task.budget}
-                                </Text>
+                        {/* 3. Media (Images/Videos carousel) */}
+                        {task.media_urls && task.media_urls.length > 0 && (
+                            <View style={styles.mediaSection}>
+                                <MediaCarousel mediaUrls={task.media_urls} />
                             </View>
-                            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                            <View style={styles.infoRow}>
-                                <View style={styles.infoLabelRow}>
-                                    <Ionicons name="swap-horizontal-outline" size={16} color={colors.textMuted} />
-                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
-                                        Negotiable
-                                    </Text>
-                                </View>
-                                <Text style={[styles.infoValue, { color: colors.text, fontFamily: FontFamily.semiBold }]}>
-                                    {task.negotiable ? 'Yes' : 'No'}
-                                </Text>
-                            </View>
-                        </View>
+                        )}
 
                         {/* 4. Urgency */}
                         {task.urgency && (
@@ -682,14 +692,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             </View>
                         )}
 
-                        {/* 5. Media (Images/Videos carousel) */}
-                        {task.media_urls && task.media_urls.length > 0 && (
-                            <View style={styles.mediaSection}>
-                                <MediaCarousel mediaUrls={task.media_urls} />
-                            </View>
-                        )}
-
-                        {/* 6. Location */}
+                        {/* 5. Location */}
                         {(task.location || task.locality || distanceKm != null) && (
                             <View style={[styles.locationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                 <View style={styles.locationHeader}>
@@ -719,7 +722,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             </View>
                         )}
 
-                        {/* 7. Additional Information */}
+                        {/* 6. Additional Information */}
                         <View style={[styles.additionalInfo, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.additionalInfoHeader}>
                                 <Ionicons name="information-circle-outline" size={18} color={colors.accent} />
@@ -775,20 +778,65 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             )}
                         </View>
 
-                        {/* Optional message input when applying */}
-                        {showMessageInput && !isOwnTask && task.status === 'open' && (
-                            <View>
-                                <Text
-                                    style={[
-                                        styles.msgLabel,
-                                        { color: colors.textSecondary, fontFamily: FontFamily.medium },
-                                    ]}
-                                >
-                                    Add a message (optional)
+                        {/* 7. Budget (Pricing) */}
+                        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={styles.infoRow}>
+                                <View style={styles.infoLabelRow}>
+                                    <Ionicons name="cash-outline" size={16} color={colors.accent} />
+                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                        Budget
+                                    </Text>
+                                </View>
+                                <Text style={[styles.infoValue, { color: colors.accent, fontFamily: FontFamily.bold }]}>
+                                    ₹{task.budget}
                                 </Text>
+                            </View>
+                            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                            <View style={styles.infoRow}>
+                                <View style={styles.infoLabelRow}>
+                                    <Ionicons name="swap-horizontal-outline" size={16} color={colors.textMuted} />
+                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                        Negotiable
+                                    </Text>
+                                </View>
+                                <Text style={[styles.infoValue, { color: colors.text, fontFamily: FontFamily.semiBold }]}>
+                                    {task.negotiable ? 'Yes' : 'No'}
+                                </Text>
+                            </View>
+                        </View>
+                    </ScrollView>
+
+                    <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                        {renderFooterButton()}
+                    </View>
+                </Animated.View>
+
+                {/* Application Popup Modal */}
+                {showMessageInput && (
+                    <Animated.View 
+                        entering={FadeIn.duration(200)}
+                        exiting={FadeOut.duration(200)}
+                        style={[StyleSheet.absoluteFill, styles.popupOverlayCenter, { backgroundColor: colors.overlay }]}
+                    >
+                        <KeyboardAvoidingView 
+                            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                            style={{ width: '100%', alignItems: 'center' }}
+                        >
+                            <Animated.View 
+                                entering={ZoomIn.duration(200).springify()}
+                                exiting={ZoomOut.duration(200)}
+                                style={[styles.popupCard, { backgroundColor: colors.surface }]}
+                            >
+                                <Text style={[styles.popupTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
+                                    Apply for Task
+                                </Text>
+                                <Text style={[styles.popupSub, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}>
+                                    Add a message to the poster (optional)
+                                </Text>
+                                
                                 <TextInput
                                     style={[
-                                        styles.msgInput,
+                                        styles.popupInput,
                                         {
                                             backgroundColor: colors.inputBackground,
                                             color: colors.text,
@@ -802,17 +850,42 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                                     maxLength={200}
                                     value={applyMessage}
                                     onChangeText={setApplyMessage}
+                                    autoFocus
                                 />
-                            </View>
-                        )}
-                    </ScrollView>
 
-                    <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-                        {renderFooterButton()}
-                    </View>
+                                <View style={styles.popupActions}>
+                                    <Pressable 
+                                        style={[styles.popupBtn, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]} 
+                                        onPress={() => setShowMessageInput(false)}
+                                    >
+                                        <Text style={[styles.popupBtnText, { color: colors.text, fontFamily: FontFamily.medium }]}>Cancel</Text>
+                                    </Pressable>
+                                    <Pressable 
+                                        style={[styles.popupBtn, styles.popupBtnPrimary, { backgroundColor: colors.accent }]} 
+                                        onPress={handleApply}
+                                        disabled={applyLoading}
+                                    >
+                                        {applyLoading ? (
+                                            <ActivityIndicator size="small" color="#FFF" />
+                                        ) : (
+                                            <Text style={[styles.popupBtnText, { color: '#FFF', fontFamily: FontFamily.bold }]}>Submit</Text>
+                                        )}
+                                    </Pressable>
+                                </View>
+                            </Animated.View>
+                        </KeyboardAvoidingView>
                     </Animated.View>
-                </GestureDetector>
+                )}
             </GestureHandlerRootView>
+
+            {/* Edit Task Sheet (overlays on top of this sheet) */}
+            {editingTask && (
+                <EditTaskSheet
+                    task={editingTask}
+                    visible={!!editingTask}
+                    onClose={() => setEditingTask(null)}
+                />
+            )}
         </Modal>
     );
 }
@@ -834,11 +907,23 @@ const styles = StyleSheet.create({
         paddingTop: Spacing.md,
         paddingBottom: Spacing.xs,
         alignItems: 'center',
+        flex: 1, // So it occupies center area between close button
     },
     handle: {
         width: 44,
         height: 5,
         borderRadius: 3,
+    },
+    headerContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.lg,
+    },
+    closeButtonAbsolute: {
+        position: 'absolute',
+        right: Spacing.xl,
+        top: Spacing.md,
+        zIndex: 10,
     },
     content: {
         flex: 1,
@@ -1051,6 +1136,57 @@ const styles = StyleSheet.create({
         gap: Spacing.sm,
     },
     deleteText: {
+        fontSize: FontSize.md,
+    },
+    popupOverlayCenter: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: Spacing.xl,
+        zIndex: 999,
+    },
+    popupCard: {
+        width: '100%',
+        maxWidth: 400,
+        borderRadius: BorderRadius.xl,
+        padding: Spacing.xl,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+    },
+    popupTitle: {
+        fontSize: FontSize.xl,
+        marginBottom: Spacing.xs,
+    },
+    popupSub: {
+        fontSize: FontSize.sm,
+        marginBottom: Spacing.lg,
+    },
+    popupInput: {
+        borderRadius: BorderRadius.md,
+        borderWidth: 1,
+        padding: Spacing.md,
+        fontSize: FontSize.md,
+        minHeight: 100,
+        textAlignVertical: 'top',
+        marginBottom: Spacing.xl,
+    },
+    popupActions: {
+        flexDirection: 'row',
+        gap: Spacing.sm,
+    },
+    popupBtn: {
+        flex: 1,
+        paddingVertical: Spacing.md,
+        borderRadius: BorderRadius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    popupBtnPrimary: {
+        borderWidth: 0,
+    },
+    popupBtnText: {
         fontSize: FontSize.md,
     },
 });

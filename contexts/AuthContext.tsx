@@ -3,7 +3,7 @@
  *
  * Responsibilities:
  *  - Manages Supabase session lifecycle (init, listen, sign-out)
- *  - Exposes sign-up / sign-in methods (email, Google OAuth, phone OTP)
+ *  - Exposes sign-up / sign-in methods (email, Google OAuth)
  *  - Fetches & caches the user profile via TanStack Query
  *  - Provides `isAuthenticated` / `isProfileComplete` flags used for routing guards
  *
@@ -44,6 +44,8 @@ export type Profile = {
     username_updated_at: string | null;
     /** ISO timestamp of the last full_name change. Null means never changed / no cooldown. */
     full_name_updated_at: string | null;
+    /** UPI ID for receiving direct payments from task posters. */
+    upi_id: string | null;
 };
 
 /** Read-only auth state exposed to consumers. */
@@ -62,10 +64,6 @@ type AuthActions = {
     signUp: (email: string, password: string) => Promise<{ error: string | null }>;
     signIn: (email: string, password: string) => Promise<{ error: string | null }>;
     signInWithGoogle: () => Promise<{ error: string | null }>;
-    signInWithPhone: (phone: string) => Promise<{ error: string | null }>;
-    verifyPhoneOtp: (phone: string, token: string) => Promise<{ error: string | null }>;
-    sendPhoneVerification: (phone: string) => Promise<{ error: string | null; otpPreview?: string }>;
-    verifyPhoneCode: (phone: string, token: string) => Promise<{ error: string | null }>;
     updateProfile: (data: Partial<Profile>) => Promise<{ error: string | null }>;
     signOut: () => Promise<void>;
     refreshProfile: () => Promise<void>;
@@ -193,35 +191,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (result.type === 'success') {
                 const url = result.url;
 
-                // Try extracting tokens from hash fragment (implicit flow)
-                const hashIdx = url.indexOf('#');
-                if (hashIdx !== -1) {
-                    const hashParams = new URLSearchParams(url.substring(hashIdx + 1));
-                    const accessToken = hashParams.get('access_token');
-                    const refreshToken = hashParams.get('refresh_token');
-                    if (accessToken && refreshToken) {
-                        await supabase.auth.setSession({
-                            access_token: accessToken,
-                            refresh_token: refreshToken,
-                        });
-                        return { error: null };
-                    }
-                }
-
-                // Try extracting code from query params (PKCE flow)
+                // Enforce PKCE flow and handle OAuth errors securely
                 const qIdx = url.indexOf('?');
-                if (qIdx !== -1) {
-                    const queryParams = new URLSearchParams(url.substring(qIdx + 1));
-                    const code = queryParams.get('code');
-                    if (code) {
-                        const { error: exchangeError } =
-                            await supabase.auth.exchangeCodeForSession(code);
-                        if (exchangeError) return { error: exchangeError.message };
-                        return { error: null };
-                    }
+                const hashIdx = url.indexOf('#');
+                
+                // Parse params (they usually appear in query string for PKCE, but can sometimes be in hash if error occurred)
+                const searchString = qIdx !== -1 ? url.substring(qIdx + 1) : (hashIdx !== -1 ? url.substring(hashIdx + 1) : '');
+                const urlParams = new URLSearchParams(searchString);
+
+                const oauthError = urlParams.get('error');
+                const errorDescription = urlParams.get('error_description');
+                if (oauthError) {
+                    return { error: errorDescription || oauthError };
                 }
 
-                return { error: 'Failed to extract session from callback' };
+                // Security: We exclusively use PKCE (extracting the 'code' parameter) to trade for a session.
+                // We've intentionally removed Implicit Flow handling (access_token injection) as it can be 
+                // vulnerable to session fixation if the custom app scheme is hijacked constraint.
+                const code = urlParams.get('code');
+                if (code) {
+                    const { error: exchangeError } =
+                        await supabase.auth.exchangeCodeForSession(code);
+                    if (exchangeError) return { error: exchangeError.message };
+                    return { error: null };
+                }
+
+                return { error: 'Failed to complete secure authentication flow' };
             }
 
             if (result.type === 'cancel' || result.type === 'dismiss') {
@@ -234,61 +229,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    /** Send a native Supabase OTP to the given phone number. */
-    const signInWithPhone = async (phone: string) => {
-        const { error } = await supabase.auth.signInWithOtp({ phone });
-        if (error) return { error: error.message };
-        return { error: null };
-    };
-
-    /** Verify a native Supabase SMS OTP. */
-    const verifyPhoneOtp = async (phone: string, token: string) => {
-        const { error } = await supabase.auth.verifyOtp({
-            phone,
-            token,
-            type: 'sms',
-        });
-        if (error) return { error: error.message };
-        return { error: null };
-    };
-
-    /**
-     * Send OTP via a custom Supabase RPC (`send_phone_otp`).
-     * Uses a server-side function — no external SMS provider needed.
-     * Returns `otpPreview` in dev builds for easy testing.
-     */
-    const sendPhoneVerification = async (phone: string): Promise<{ error: string | null; otpPreview?: string }> => {
-        const { data, error } = await supabase.rpc('send_phone_otp', { p_phone: phone });
-        if (error) {
-            if (
-                error.message.includes('User from sub claim in JWT does not exist') ||
-                error.message.includes('user_not_found')
-            ) {
-                if (__DEV__) console.warn('[Auth] User no longer exists. Forcing sign-out.');
-                await signOut();
-                return { error: 'Your session has expired. Please sign in again.' };
-            }
-            return { error: error.message };
-        }
-        if (data && !data.success) {
-            return { error: data.error || 'Failed to send OTP' };
-        }
-        // SECURITY: otp_preview is stripped from the RPC response in the DB function.
-        // It is only returned here in __DEV__ mode, never in production builds.
-        // In production integrate an SMS provider (Twilio, AWS SNS, etc.) in the DB function.
-        const otpPreview = __DEV__ ? data?.otp_preview : undefined;
-        return { error: null, otpPreview };
-    };
-
-    /** Verify OTP via custom Supabase RPC (`verify_phone_otp`). */
-    const verifyPhoneCode = async (phone: string, token: string) => {
-        const { data, error } = await supabase.rpc('verify_phone_otp', { p_phone: phone, p_otp: token });
-        if (error) return { error: error.message };
-        if (data && !data.success) {
-            return { error: data.error || 'Verification failed' };
-        }
-        return { error: null };
-    };
+    // NOTE: Phone OTP verification methods removed — no SMS provider configured yet.
+    // Phone numbers are still collected but not verified via OTP at this time.
 
     /** Partially update the current user's profile via a TanStack mutation. */
     const updateProfile = async (data: Partial<Profile>) => {
@@ -333,10 +275,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             signUp,
             signIn,
             signInWithGoogle,
-            signInWithPhone,
-            verifyPhoneOtp,
-            sendPhoneVerification,
-            verifyPhoneCode,
             updateProfile,
             signOut,
             refreshProfile,
