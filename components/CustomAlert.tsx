@@ -142,19 +142,22 @@ function AlertContent({
                         </Text>
                     </Pressable>
                 ) : (
-                    // 2-button row (or column if > 2)
+                    // 2-button row (exactly 2) or column stack (3+)
                     <View style={[styles.buttonRow, buttons.length > 2 && styles.buttonCol]}>
                         {buttons.map((btn, i) => {
                             const isDestructive = btn.style === 'destructive';
                             const isCancel = btn.style === 'cancel';
                             const isPrimary = !isDestructive && !isCancel;
+                            // In column mode (3+ buttons) flex:1 collapses to 0 height
+                            // because the parent has no fixed height — use width:'100%' instead.
+                            const isColMode = buttons.length > 2;
 
                             return (
                                 <Pressable
                                     key={i}
                                     style={[
                                         styles.btn,
-                                        styles.btnFlex,
+                                        isColMode ? styles.btnFull : styles.btnFlex,
                                         isCancel && [styles.btnGhost, { borderColor: colors.border }],
                                         isDestructive && { backgroundColor: '#F44336' },
                                         isPrimary && { backgroundColor: cfg.iconColor },
@@ -270,8 +273,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.lg,
         minWidth: 80,
     },
+    // Row mode (exactly 2 buttons): fill available width equally
     btnFlex: {
         flex: 1,
+    },
+    // Column mode (3+ buttons): fill full width, height driven by btn.height
+    btnFull: {
+        width: '100%' as const,
     },
     btnGhost: {
         backgroundColor: 'transparent',

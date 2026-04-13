@@ -202,17 +202,56 @@ export function ApplicationProvider({ children }: { children: React.ReactNode })
         [user, rejectMutation]
     );
 
-    // ── Get task applicants (imperative, used by sheets) ────────
+    // ── Get task applicants (imperative, used by sheets) ────────────
     const getTaskApplicants = useCallback(async (taskId: string) => {
-        const { data, error } = await supabase.rpc('get_task_applicants', {
-            p_task_id: taskId,
-        });
+        // Step 1: Fetch applications with message directly from the table
+        const { data: appRows, error: appError } = await supabase
+            .from('task_applications')
+            .select('id, applicant_id, status, message, created_at')
+            .eq('task_id', taskId)
+            .neq('status', 'withdrawn')
+            .order('created_at', { ascending: false });
 
-        if (error) {
-            if (__DEV__) console.error('Error fetching applicants:', error.message);
-            return [];
+        if (appError) {
+            if (__DEV__) console.error('Error fetching task applications:', appError.message);
+            // Fall back to RPC if direct query fails
+            const { data: rpcData, error: rpcError } = await supabase.rpc('get_task_applicants', {
+                p_task_id: taskId,
+            });
+            if (rpcError) {
+                if (__DEV__) console.error('RPC fallback also failed:', rpcError.message);
+                return [];
+            }
+            return (rpcData ?? []) as TaskApplicant[];
         }
-        return (data ?? []) as TaskApplicant[];
+
+        if (!appRows || appRows.length === 0) return [];
+
+        // Step 2: Fetch applicant profiles in one query
+        const applicantIds = appRows.map((r: any) => r.applicant_id);
+        const { data: profileRows } = await supabase
+            .from('profiles')
+            .select('id, full_name, username, avatar_url, bio')
+            .in('id', applicantIds);
+
+        const profileMap: Record<string, any> = {};
+        (profileRows ?? []).forEach((p: any) => { profileMap[p.id] = p; });
+
+        // Step 3: Merge applications + profiles into TaskApplicant shape
+        return appRows.map((row: any) => {
+            const profile = profileMap[row.applicant_id] ?? {};
+            return {
+                application_id: row.id,
+                applicant_id: row.applicant_id,
+                status: row.status,
+                message: row.message ?? null,
+                applied_at: row.created_at,
+                full_name: profile.full_name ?? null,
+                username: profile.username ?? null,
+                avatar_url: profile.avatar_url ?? null,
+                bio: profile.bio ?? null,
+            } as TaskApplicant;
+        });
     }, []);
 
     // ── Get my application status (imperative) ──────────────────

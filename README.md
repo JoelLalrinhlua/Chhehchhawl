@@ -81,3 +81,7 @@ Chhehchhawl is crafted using a modern tech stack for a premium feel:
 ---
 
 *Made with love for the community.*
+
+---
+
+© 2026 Joel Lalrinhlua. All rights reserved. No part of this project may be reproduced, distributed, or transmitted in any form or by any means, including photocopying, recording, or other electronic or mechanical methods, without the prior written permission of the author, except in the case of brief quotations embodied in critical reviews and certain other noncommercial uses permitted by copyright law.

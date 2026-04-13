@@ -415,11 +415,8 @@ export function ChatRoomSheet({
     // ── Share location prompt (picker or current) ──
     const handleShareLocationPrompt = useCallback(() => {
         setAttachMenuVisible(false);
-        if (!WebView) {
-            handleShareLocation();
-            return;
-        }
 
+        // Always show the options dialog so user can choose
         setAlertConfig({
             visible: true,
             title: 'Share Location',
@@ -428,6 +425,11 @@ export function ChatRoomSheet({
             buttons: [
                 { text: 'Current Location', style: 'default', onPress: () => handleShareLocation() },
                 { text: 'Choose on Map', style: 'default', onPress: async () => {
+                    if (!WebView) {
+                        showToast('Map picker requires a full build. Sharing current location instead.', 'info');
+                        handleShareLocation();
+                        return;
+                    }
                     const { status } = await Location.requestForegroundPermissionsAsync();
                     if (status === 'granted') {
                         try {
@@ -448,7 +450,7 @@ export function ChatRoomSheet({
                 { text: 'Cancel', style: 'cancel' },
             ],
         });
-    }, [handleShareLocation]);
+    }, [handleShareLocation, showToast]);
 
     // ── Request live location ──
     const handleRequestLiveLocation = useCallback(async () => {
