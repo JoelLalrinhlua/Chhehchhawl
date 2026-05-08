@@ -1,36 +1,41 @@
 /**
  * use-notification-queries.ts — TanStack Query hooks for notifications.
- *
- * `useNotificationsQuery`            — fetches the user's notifications list.
- * `useUnreadNotificationCountQuery`  — fetches unread notification count.
  */
 
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 
+export type NotificationType =
+    | 'application_accepted'
+    | 'application_rejected'
+    | 'application_received'
+    | 'task_pending_confirmation'
+    | 'task_completed'
+    | 'new_message'
+    | 'task_cancelled';
+
 /** Shape of a notification row returned by `get_my_notifications` RPC. */
 export interface Notification {
     id: string;
-    type: 'application_accepted' | 'application_rejected' | 'task_pending_confirmation' | 'task_completed';
+    type: NotificationType;
     task_id: string;
     title: string;
     body: string;
     read: boolean;
     created_at: string;
+    reference_id: string | null;
+    reference_type: 'chat' | 'task' | null;
 }
 
-/** Fetch notifications for the given user via RPC. */
 async function fetchNotifications(userId: string): Promise<Notification[]> {
     const { data, error } = await supabase.rpc('get_my_notifications', {
         p_user_id: userId,
     });
-
     if (error) throw new Error(error.message);
     return (data ?? []) as Notification[];
 }
 
-/** Hook to fetch the current user's notifications list. */
 export function useNotificationsQuery(userId: string | undefined, enabled: boolean = true) {
     return useQuery({
         queryKey: queryKeys.notifications.list(userId ?? ''),
@@ -40,23 +45,38 @@ export function useNotificationsQuery(userId: string | undefined, enabled: boole
     });
 }
 
-/** Fetch unread notification count for the given user. */
 async function fetchUnreadCount(userId: string): Promise<number> {
     const { data, error } = await supabase.rpc('get_unread_notification_count', {
         p_user_id: userId,
     });
-
     if (error) throw new Error(error.message);
     return (data ?? 0) as number;
 }
 
-/** Hook to fetch the current user's unread notification count. */
 export function useUnreadNotificationCountQuery(userId: string | undefined, enabled: boolean = true) {
     return useQuery({
         queryKey: queryKeys.notifications.unreadCount(userId ?? ''),
         queryFn: () => fetchUnreadCount(userId!),
         enabled: !!userId && enabled,
         staleTime: 10 * 1000,
-        refetchInterval: 30 * 1000, // Poll every 30s as fallback
+        refetchInterval: 30 * 1000,
+    });
+}
+
+async function fetchNewApplicantsCount(userId: string): Promise<number> {
+    const { data, error } = await supabase.rpc('get_new_applicants_count', {
+        p_user_id: userId,
+    });
+    if (error) return 0;
+    return (data ?? 0) as number;
+}
+
+export function useNewApplicantsCountQuery(userId: string | undefined, enabled: boolean = true) {
+    return useQuery({
+        queryKey: ['notifications', 'new-applicants', userId ?? ''],
+        queryFn: () => fetchNewApplicantsCount(userId!),
+        enabled: !!userId && enabled,
+        staleTime: 20 * 1000,
+        refetchInterval: 60 * 1000,
     });
 }

@@ -22,6 +22,7 @@ import {
     ActivityIndicator,
     Dimensions,
     FlatList,
+    Modal,
     Pressable,
     StyleSheet,
     Text,
@@ -66,6 +67,7 @@ export function ApplicantListSheet({
     const [applicants, setApplicants] = useState<TaskApplicant[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [selectedApplicant, setSelectedApplicant] = useState<TaskApplicant | null>(null);
     const translateY = useSharedValue(0);
     // Custom alert state
     const [alertConfig, setAlertConfig] = useState<{
@@ -128,6 +130,7 @@ export function ApplicantListSheet({
                             showToast(`${name} accepted as tasker!`, 'success');
                             onStatusChange?.();
                             fetchApplicants();
+                            setSelectedApplicant(null);
                         } else {
                             showToast(result.error ?? 'Failed to accept', 'error');
                         }
@@ -156,6 +159,7 @@ export function ApplicantListSheet({
                         if (result.success) {
                             showToast(`${name} rejected.`, 'warning');
                             fetchApplicants();
+                            setSelectedApplicant(null);
                         } else {
                             showToast(result.error ?? 'Failed to reject', 'error');
                         }
@@ -163,6 +167,11 @@ export function ApplicantListSheet({
                 },
             ],
         });
+    };
+
+    const getRatingLabel = (_applicant: TaskApplicant) => {
+        // Rating/reviews aren't currently modeled in this app DB. Keep UI polished with a safe placeholder.
+        return 'New';
     };
 
     const renderApplicant = ({
@@ -173,7 +182,6 @@ export function ApplicantListSheet({
         index: number;
     }) => {
         const isAccepted = item.status === 'accepted';
-        const isActionable = isMyPost && taskStatus === 'open' && item.status === 'pending';
         const isProcessing = actionLoading === item.applicant_id;
 
         return (
@@ -189,147 +197,129 @@ export function ApplicantListSheet({
                     },
                 ]}
             >
-                {/* Avatar placeholder */}
-                <View
-                    style={[
-                        styles.avatar,
-                        {
-                            backgroundColor: isAccepted
-                                ? colors.statusGreen + '30'
-                                : colors.accentLight,
-                        },
-                    ]}
+                <Pressable
+                    style={styles.cardPressable}
+                    onPress={() => setSelectedApplicant(item)}
+                    android_ripple={{ color: colors.border }}
                 >
-                    <Text style={[styles.avatarText, { color: isAccepted ? colors.statusGreen : colors.accent }]}>
-                        {(item.full_name ?? item.username ?? '?').charAt(0).toUpperCase()}
-                    </Text>
-                </View>
-
-                {/* Info */}
-                <View style={styles.applicantInfo}>
-                    <View style={styles.nameRow}>
-                        <Text
-                            style={[
-                                styles.applicantName,
-                                { color: colors.text, fontFamily: FontFamily.semiBold },
-                            ]}
-                            numberOfLines={1}
-                        >
-                            {item.full_name ?? item.username ?? 'Anonymous'}
+                    {/* Avatar placeholder */}
+                    <View
+                        style={[
+                            styles.avatar,
+                            {
+                                backgroundColor: isAccepted
+                                    ? colors.statusGreen + '30'
+                                    : colors.accentLight,
+                            },
+                        ]}
+                    >
+                        <Text style={[styles.avatarText, { color: isAccepted ? colors.statusGreen : colors.accent }]}>
+                            {(item.full_name ?? item.username ?? '?').charAt(0).toUpperCase()}
                         </Text>
-                        {isAccepted && (
-                            <View
-                                style={[
-                                    styles.acceptedBadge,
-                                    { backgroundColor: colors.statusGreen + '20' },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="checkmark-circle"
-                                    size={14}
-                                    color={colors.statusGreen}
-                                />
-                                <Text
-                                    style={[
-                                        styles.acceptedText,
-                                        {
-                                            color: colors.statusGreen,
-                                            fontFamily: FontFamily.medium,
-                                        },
-                                    ]}
-                                >
-                                    Accepted
-                                </Text>
-                            </View>
-                        )}
                     </View>
 
-                    {item.username && (
+                    {/* Info */}
+                    <View style={styles.applicantInfo}>
+                        <View style={styles.nameRow}>
+                            <Text
+                                style={[
+                                    styles.applicantName,
+                                    { color: colors.text, fontFamily: FontFamily.semiBold },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                {item.full_name ?? item.username ?? 'Anonymous'}
+                            </Text>
+                            {isAccepted && (
+                                <View
+                                    style={[
+                                        styles.acceptedBadge,
+                                        { backgroundColor: colors.statusGreen + '20' },
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name="checkmark-circle"
+                                        size={14}
+                                        color={colors.statusGreen}
+                                    />
+                                    <Text
+                                        style={[
+                                            styles.acceptedText,
+                                            {
+                                                color: colors.statusGreen,
+                                                fontFamily: FontFamily.medium,
+                                            },
+                                        ]}
+                                    >
+                                        Accepted
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* Rating row */}
+                        <View style={styles.ratingRow}>
+                            <Ionicons name="star" size={13} color={colors.statusOrange} />
+                            <Text style={[styles.ratingText, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                                {getRatingLabel(item)}
+                            </Text>
+                        </View>
+
+                        {item.message ? (
+                            <Text
+                                style={[
+                                    styles.message,
+                                    {
+                                        color: colors.textSecondary,
+                                        fontFamily: FontFamily.regular,
+                                    },
+                                ]}
+                                numberOfLines={2}
+                            >
+                                {item.message}
+                            </Text>
+                        ) : (
+                            <Text
+                                style={[
+                                    styles.message,
+                                    { color: colors.textMuted, fontFamily: FontFamily.regular },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                No message provided
+                            </Text>
+                        )}
+
+                        {item.username && (
+                            <Text
+                                style={[
+                                    styles.username,
+                                    { color: colors.textMuted, fontFamily: FontFamily.regular },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                @{item.username}
+                            </Text>
+                        )}
+
                         <Text
                             style={[
-                                styles.username,
+                                styles.appliedTime,
                                 { color: colors.textMuted, fontFamily: FontFamily.regular },
                             ]}
                         >
-                            @{item.username}
+                            Applied {formatTimeAgo(item.applied_at)}
                         </Text>
-                    )}
-
-                    {item.message && (
-                        <Text
-                            style={[
-                                styles.message,
-                                {
-                                    color: colors.textSecondary,
-                                    fontFamily: FontFamily.regular,
-                                },
-                            ]}
-                            numberOfLines={2}
-                        >
-                            "{item.message}"
-                        </Text>
-                    )}
-
-                    {item.bio && (
-                        <Text
-                            style={[
-                                styles.bio,
-                                {
-                                    color: colors.textMuted,
-                                    fontFamily: FontFamily.regular,
-                                },
-                            ]}
-                            numberOfLines={1}
-                        >
-                            {item.bio}
-                        </Text>
-                    )}
-
-                    <Text
-                        style={[
-                            styles.appliedTime,
-                            { color: colors.textMuted, fontFamily: FontFamily.regular },
-                        ]}
-                    >
-                        Applied {formatTimeAgo(item.applied_at)}
-                    </Text>
-                </View>
-
-                {/* Action Buttons */}
-                {isActionable && !isProcessing && (
-                    <View style={styles.actionButtons}>
-                        <Pressable
-                            style={[
-                                styles.actionBtn,
-                                { backgroundColor: colors.statusGreen + '20' },
-                            ]}
-                            onPress={() => handleAccept(item)}
-                        >
-                            <Ionicons
-                                name="checkmark"
-                                size={20}
-                                color={colors.statusGreen}
-                            />
-                        </Pressable>
-                        <Pressable
-                            style={[
-                                styles.actionBtn,
-                                { backgroundColor: colors.statusRed + '20' },
-                            ]}
-                            onPress={() => handleReject(item)}
-                        >
-                            <Ionicons
-                                name="close"
-                                size={20}
-                                color={colors.statusRed}
-                            />
-                        </Pressable>
                     </View>
-                )}
 
-                {isProcessing && (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                )}
+                    <View style={styles.chevronWrap}>
+                        {isProcessing ? (
+                            <ActivityIndicator size="small" color={colors.accent} />
+                        ) : (
+                            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                        )}
+                    </View>
+                </Pressable>
             </Animated.View>
         );
     };
@@ -399,6 +389,75 @@ export function ApplicantListSheet({
                 </Animated.View>
               </GestureDetector>
             </Animated.View>
+
+            {/* Applicant details modal */}
+            <Modal
+                visible={!!selectedApplicant}
+                transparent
+                animationType="fade"
+                statusBarTranslucent
+                onRequestClose={() => setSelectedApplicant(null)}
+            >
+                <View style={[styles.detailOverlay, { backgroundColor: colors.overlay }]}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedApplicant(null)} />
+                    <View style={[styles.detailCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={styles.detailHeader}>
+                            <Text style={[styles.detailTitle, { color: colors.text, fontFamily: FontFamily.bold }]} numberOfLines={1}>
+                                {selectedApplicant?.full_name ?? selectedApplicant?.username ?? 'Applicant'}
+                            </Text>
+                            <Pressable onPress={() => setSelectedApplicant(null)} hitSlop={10}>
+                                <Ionicons name="close" size={22} color={colors.textMuted} />
+                            </Pressable>
+                        </View>
+
+                        <View style={styles.detailSection}>
+                            <View style={styles.detailMetaRow}>
+                                <Ionicons name="star" size={14} color={colors.statusOrange} />
+                                <Text style={[styles.detailMetaText, { color: colors.textSecondary, fontFamily: FontFamily.medium }]}>
+                                    {selectedApplicant ? getRatingLabel(selectedApplicant) : '—'}
+                                </Text>
+                            </View>
+                            <Text style={[styles.detailLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                                Application message
+                            </Text>
+                            <Text style={[styles.detailMessage, { color: colors.text, fontFamily: FontFamily.regular }]}>
+                                {selectedApplicant?.message?.trim()
+                                    ? selectedApplicant.message.trim()
+                                    : 'No message provided.'}
+                            </Text>
+                        </View>
+
+                        <View style={styles.detailSection}>
+                            <Text style={[styles.detailLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                                Reviews
+                            </Text>
+                            <View style={[styles.reviewsPlaceholder, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.textMuted} />
+                                <Text style={[styles.reviewsPlaceholderText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                    No reviews available yet
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={[styles.detailActions, { borderTopColor: colors.border }]}>
+                            <Pressable
+                                style={[styles.detailBtn, { backgroundColor: colors.statusRed + '15', borderColor: colors.statusRed + '30' }]}
+                                onPress={() => selectedApplicant && handleReject(selectedApplicant)}
+                                disabled={!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending'}
+                            >
+                                <Text style={[styles.detailBtnText, { color: colors.statusRed, fontFamily: FontFamily.bold }]}>Deny</Text>
+                            </Pressable>
+                            <Pressable
+                                style={[styles.detailBtn, { backgroundColor: colors.statusGreen, borderColor: colors.statusGreen }]}
+                                onPress={() => selectedApplicant && handleAccept(selectedApplicant)}
+                                disabled={!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending'}
+                            >
+                                <Text style={[styles.detailBtnText, { color: '#FFF', fontFamily: FontFamily.bold }]}>Accept</Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Themed confirmation dialog */}
             <CustomAlert
@@ -489,11 +548,15 @@ const styles = StyleSheet.create({
         paddingBottom: Spacing.huge,
     },
     applicantCard: {
+        padding: 0,
+        borderRadius: BorderRadius.md,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    cardPressable: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: Spacing.lg,
-        borderRadius: BorderRadius.md,
-        borderWidth: 1,
         gap: Spacing.md,
     },
     avatar: {
@@ -519,14 +582,23 @@ const styles = StyleSheet.create({
         fontSize: FontSize.md,
         flexShrink: 1,
     },
+    ratingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 4,
+        marginBottom: 2,
+    },
+    ratingText: {
+        fontSize: FontSize.xs,
+    },
     username: {
         fontSize: FontSize.xs,
-        marginTop: 2,
+        marginTop: 4,
     },
     message: {
         fontSize: FontSize.sm,
         marginTop: Spacing.xs,
-        fontStyle: 'italic',
     },
     bio: {
         fontSize: FontSize.xs,
@@ -547,14 +619,89 @@ const styles = StyleSheet.create({
     acceptedText: {
         fontSize: FontSize.xs,
     },
-    actionButtons: {
-        gap: Spacing.sm,
-    },
-    actionBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
+    chevronWrap: {
+        marginLeft: Spacing.sm,
         alignItems: 'center',
+        justifyContent: 'center',
+        width: 24,
+    },
+
+    // Detail modal styles
+    detailOverlay: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: Spacing.xl,
+    },
+    detailCard: {
+        width: '100%',
+        maxWidth: 520,
+        borderRadius: BorderRadius.xl,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    detailHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: Spacing.xl,
+        paddingTop: Spacing.xl,
+        paddingBottom: Spacing.lg,
+    },
+    detailTitle: {
+        fontSize: FontSize.xl,
+        flex: 1,
+        marginRight: Spacing.md,
+    },
+    detailSection: {
+        paddingHorizontal: Spacing.xl,
+        paddingBottom: Spacing.lg,
+    },
+    detailMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: Spacing.sm,
+    },
+    detailMetaText: {
+        fontSize: FontSize.sm,
+    },
+    detailLabel: {
+        fontSize: FontSize.xs,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+        marginBottom: Spacing.sm,
+    },
+    detailMessage: {
+        fontSize: FontSize.md,
+        lineHeight: 22,
+    },
+    reviewsPlaceholder: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        borderRadius: BorderRadius.md,
+        borderWidth: 1,
+        padding: Spacing.md,
+    },
+    reviewsPlaceholderText: {
+        fontSize: FontSize.sm,
+    },
+    detailActions: {
+        flexDirection: 'row',
+        gap: Spacing.sm,
+        padding: Spacing.xl,
+        borderTopWidth: 1,
+    },
+    detailBtn: {
+        flex: 1,
+        borderRadius: BorderRadius.md,
+        paddingVertical: Spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+    },
+    detailBtnText: {
+        fontSize: FontSize.md,
     },
 });

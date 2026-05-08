@@ -252,6 +252,10 @@ export default function DashboardScreen() {
                         });
                     }
                 }}
+                onOpenChat={() => {
+                    setNotifVisible(false);
+                    router.push('/(tabs)/chat');
+                }}
             />
         </SafeAreaView>
     );

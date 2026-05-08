@@ -22,10 +22,12 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useToast } from '@/contexts/ToastContext';
 import { formatDistance, formatTimeAgo } from '@/utils/distance';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
+    Linking,
     Modal,
     Platform,
     Pressable,
@@ -114,6 +116,16 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
             fetchStatus();
             setShowMessageInput(false);
             setApplyMessage('');
+
+            // Prefetch all task images into memory+disk cache immediately
+            // so they appear instantly when the carousel renders.
+            if (task.media_urls && task.media_urls.length > 0) {
+                task.media_urls.forEach((url) => {
+                    if (!url.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm|m4v)($|\?)/)) {
+                        Image.prefetch(url, 'memory-disk').catch(() => {});
+                    }
+                });
+            }
         } else {
             translateY.value = withTiming(SCREEN_HEIGHT, { duration: 200 });
             backdropOpacity.value = withTiming(0, { duration: 200 });
@@ -151,8 +163,13 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
     }));
 
     const handleApply = async () => {
+        const trimmed = applyMessage.trim();
+        if (trimmed.length < 1) {
+            showToast('Please add a message before submitting.', 'warning');
+            return;
+        }
         setApplyLoading(true);
-        const result = await applyForTask(task.id, applyMessage || undefined);
+        const result = await applyForTask(task.id, trimmed);
         setApplyLoading(false);
 
         if (result.success) {
@@ -619,16 +636,6 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             {task.description || 'No description provided.'}
                         </Text>
 
-                        {task.extra_description && (
-                            <Text
-                                style={[
-                                    styles.extraDesc,
-                                    { color: colors.textSecondary, fontFamily: FontFamily.regular },
-                                ]}
-                            >
-                                {task.extra_description}
-                            </Text>
-                        )}
 
                         {/* 3. Media (Images/Videos carousel) */}
                         {task.media_urls && task.media_urls.length > 0 && (
@@ -637,73 +644,52 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             </View>
                         )}
 
-                        {/* 4. Urgency */}
-                        {task.urgency && (
-                            <View style={[styles.urgencyCard, {
-                                backgroundColor: (task.urgency === 'urgent'
-                                    ? colors.statusRed
-                                    : task.urgency === 'mid'
-                                      ? colors.statusOrange
-                                      : colors.statusGreen) + '12',
-                                borderColor: (task.urgency === 'urgent'
-                                    ? colors.statusRed
-                                    : task.urgency === 'mid'
-                                      ? colors.statusOrange
-                                      : colors.statusGreen) + '30',
-                            }]}>
-                                <Ionicons
-                                    name={task.urgency === 'urgent' ? 'flash' : task.urgency === 'mid' ? 'alert-circle-outline' : 'time-outline'}
-                                    size={18}
-                                    color={
-                                        task.urgency === 'urgent'
+                        {/* ── Divider between content and details ── */}
+                        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
+
+                        {/* 4. Urgency pill + distance pill */}
+                        {(task.urgency || distanceKm != null) && (
+                            <View style={styles.metaStrip}>
+                                {task.urgency && (
+                                    <View style={[styles.metaPill, {
+                                        backgroundColor: (task.urgency === 'urgent'
                                             ? colors.statusRed
                                             : task.urgency === 'mid'
                                               ? colors.statusOrange
-                                              : colors.statusGreen
-                                    }
-                                />
-                                <Text
-                                    style={[
-                                        styles.urgencyText,
-                                        {
-                                            color:
+                                              : colors.statusGreen) + '18',
+                                        borderColor: (task.urgency === 'urgent'
+                                            ? colors.statusRed
+                                            : task.urgency === 'mid'
+                                              ? colors.statusOrange
+                                              : colors.statusGreen) + '40',
+                                    }]}>
+                                        <Ionicons
+                                            name={task.urgency === 'urgent' ? 'flash' : task.urgency === 'mid' ? 'alert-circle-outline' : 'time-outline'}
+                                            size={13}
+                                            color={
                                                 task.urgency === 'urgent'
                                                     ? colors.statusRed
                                                     : task.urgency === 'mid'
                                                       ? colors.statusOrange
-                                                      : colors.statusGreen,
+                                                      : colors.statusGreen
+                                            }
+                                        />
+                                        <Text style={[styles.metaPillText, {
+                                            color: task.urgency === 'urgent'
+                                                ? colors.statusRed
+                                                : task.urgency === 'mid'
+                                                  ? colors.statusOrange
+                                                  : colors.statusGreen,
                                             fontFamily: FontFamily.semiBold,
-                                        },
-                                    ]}
-                                >
-                                    {task.urgency.charAt(0).toUpperCase() + task.urgency.slice(1)} Priority
-                                </Text>
-                            </View>
-                        )}
-
-                        {/* 5. Location */}
-                        {(task.location || task.locality || distanceKm != null) && (
-                            <View style={[styles.locationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <View style={styles.locationHeader}>
-                                    <Ionicons name="location" size={18} color={colors.accent} />
-                                    <Text style={[styles.locationTitle, { color: colors.text, fontFamily: FontFamily.semiBold }]}>
-                                        Location
-                                    </Text>
-                                </View>
-                                {task.location && (
-                                    <Text style={[styles.locationText, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}>
-                                        {task.location}
-                                    </Text>
-                                )}
-                                {task.locality && (
-                                    <Text style={[styles.localityText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
-                                        {task.locality}
-                                    </Text>
+                                        }]}>
+                                            {task.urgency.charAt(0).toUpperCase() + task.urgency.slice(1)} Priority
+                                        </Text>
+                                    </View>
                                 )}
                                 {distanceKm != null && (
-                                    <View style={styles.distanceRow}>
-                                        <Ionicons name="navigate-outline" size={14} color={colors.accent} />
-                                        <Text style={[styles.distanceText, { color: colors.accent, fontFamily: FontFamily.medium }]}>
+                                    <View style={[styles.metaPill, { backgroundColor: colors.accentLight, borderColor: colors.accent + '30' }]}>
+                                        <Ionicons name="navigate-outline" size={13} color={colors.accent} />
+                                        <Text style={[styles.metaPillText, { color: colors.accent, fontFamily: FontFamily.medium }]}>
                                             {formatDistance(distanceKm)} away
                                         </Text>
                                     </View>
@@ -711,7 +697,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             </View>
                         )}
 
-                        {/* 6. Additional Information */}
+                        {/* 5. Additional Details */}
                         <View style={[styles.additionalInfo, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.additionalInfoHeader}>
                                 <Ionicons name="information-circle-outline" size={18} color={colors.accent} />
@@ -726,6 +712,52 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                                 </Text>
                                 <Text style={[styles.infoValue, { color: colors.text, fontFamily: FontFamily.medium }]}>
                                     {formatTimeAgo(task.created_at)}
+                                </Text>
+                            </View>
+
+                            {(task.latitude != null && task.longitude != null) || task.locality ? (
+                                <>
+                                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                                    <Pressable
+                                        style={[styles.mapButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                        onPress={() => {
+                                            const url = task.latitude != null && task.longitude != null
+                                                ? `https://www.google.com/maps/search/?api=1&query=${task.latitude},${task.longitude}`
+                                                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.locality ?? '')}`;
+                                            Linking.openURL(url).catch(() => {});
+                                        }}
+                                    >
+                                        <View style={[styles.mapButtonIcon, { backgroundColor: '#16a34a18' }]}>
+                                            <Ionicons name="map" size={22} color="#16a34a" />
+                                        </View>
+                                        <View style={styles.mapButtonText}>
+                                            <Text style={[styles.mapButtonTitle, { color: colors.text, fontFamily: FontFamily.semiBold }]}>
+                                                View on Map
+                                            </Text>
+                                            {task.locality && (
+                                                <Text style={[styles.mapButtonSub, { color: colors.textMuted, fontFamily: FontFamily.regular }]} numberOfLines={1}>
+                                                    {task.locality}
+                                                </Text>
+                                            )}
+                                        </View>
+                                        <View style={[styles.mapOpenBadge, { backgroundColor: '#16a34a18' }]}>
+                                            <Ionicons name="open-outline" size={14} color="#16a34a" />
+                                            <Text style={[styles.mapOpenBadgeText, { color: '#16a34a', fontFamily: FontFamily.semiBold }]}>Maps</Text>
+                                        </View>
+                                    </Pressable>
+                                </>
+                            ) : null}
+
+                            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                            <View style={styles.infoRow}>
+                                <View style={styles.infoLabelRow}>
+                                    <Ionicons name="swap-horizontal-outline" size={16} color={colors.textMuted} />
+                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                        Negotiable
+                                    </Text>
+                                </View>
+                                <Text style={[styles.infoValue, { color: colors.text, fontFamily: FontFamily.semiBold }]}>
+                                    {task.negotiable ? 'Yes' : 'No'}
                                 </Text>
                             </View>
 
@@ -767,31 +799,29 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                             )}
                         </View>
 
-                        {/* 7. Budget (Pricing) */}
-                        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={styles.infoRow}>
-                                <View style={styles.infoLabelRow}>
-                                    <Ionicons name="cash-outline" size={16} color={colors.accent} />
-                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                        {/* 6. Budget — prominent green card at the end */}
+                        <View style={[styles.budgetCard, { backgroundColor: '#16a34a14', borderColor: '#16a34a40' }]}>
+                            <View style={styles.budgetLeft}>
+                                <View style={[styles.budgetIconCircle, { backgroundColor: '#16a34a20' }]}>
+                                    <Ionicons name="cash" size={20} color="#16a34a" />
+                                </View>
+                                <View>
+                                    <Text style={[styles.budgetLabel, { color: '#16a34a', fontFamily: FontFamily.medium }]}>
                                         Budget
                                     </Text>
+                                    <Text style={[styles.budgetAmount, { color: '#16a34a', fontFamily: FontFamily.bold }]}>
+                                        ₹{task.budget}
+                                    </Text>
                                 </View>
-                                <Text style={[styles.infoValue, { color: colors.accent, fontFamily: FontFamily.bold }]}>
-                                    ₹{task.budget}
-                                </Text>
                             </View>
-                            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                            <View style={styles.infoRow}>
-                                <View style={styles.infoLabelRow}>
-                                    <Ionicons name="swap-horizontal-outline" size={16} color={colors.textMuted} />
-                                    <Text style={[styles.infoLabel, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                            {task.negotiable && (
+                                <View style={[styles.negotiablePill, { backgroundColor: '#16a34a20' }]}>
+                                    <Ionicons name="swap-horizontal" size={13} color="#16a34a" />
+                                    <Text style={[styles.negotiableText, { color: '#16a34a', fontFamily: FontFamily.semiBold }]}>
                                         Negotiable
                                     </Text>
                                 </View>
-                                <Text style={[styles.infoValue, { color: colors.text, fontFamily: FontFamily.semiBold }]}>
-                                    {task.negotiable ? 'Yes' : 'No'}
-                                </Text>
-                            </View>
+                            )}
                         </View>
                     </ScrollView>
 
@@ -820,7 +850,7 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                                     Apply for Task
                                 </Text>
                                 <Text style={[styles.popupSub, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}>
-                                    Add a message to the poster (optional)
+                                    Add a short message to the poster (required)
                                 </Text>
                                 
                                 <TextInput
@@ -850,9 +880,13 @@ export function TaskDetailSheet({ task, visible, onClose, distanceKm, onDelete, 
                                         <Text style={[styles.popupBtnText, { color: colors.text, fontFamily: FontFamily.medium }]}>Cancel</Text>
                                     </Pressable>
                                     <Pressable 
-                                        style={[styles.popupBtn, styles.popupBtnPrimary, { backgroundColor: colors.accent }]} 
+                                        style={[
+                                            styles.popupBtn,
+                                            styles.popupBtnPrimary,
+                                            { backgroundColor: applyMessage.trim().length >= 1 ? colors.accent : colors.textMuted },
+                                        ]} 
                                         onPress={handleApply}
-                                        disabled={applyLoading}
+                                        disabled={applyLoading || applyMessage.trim().length < 1}
                                     >
                                         {applyLoading ? (
                                             <ActivityIndicator size="small" color="#FFF" />
@@ -1020,6 +1054,11 @@ const styles = StyleSheet.create({
     mediaSection: {
         marginBottom: Spacing.lg,
     },
+    sectionDivider: {
+        height: 1,
+        marginVertical: Spacing.lg,
+        opacity: 0.6,
+    },
     locationCard: {
         borderRadius: BorderRadius.md,
         padding: Spacing.lg,
@@ -1084,6 +1123,108 @@ const styles = StyleSheet.create({
     },
     categoryText: {
         fontSize: FontSize.sm,
+    },
+    // ── Budget card ──
+    budgetCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: Spacing.lg,
+        borderRadius: BorderRadius.md,
+        borderWidth: 1,
+        marginBottom: Spacing.md,
+    },
+    budgetLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+    },
+    budgetIconCircle: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    budgetLabel: {
+        fontSize: FontSize.sm,
+        marginBottom: 2,
+    },
+    budgetAmount: {
+        fontSize: FontSize.xxl,
+    },
+    negotiablePill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.xs,
+        borderRadius: BorderRadius.full,
+    },
+    negotiableText: {
+        fontSize: FontSize.xs,
+    },
+    // ── Quick-meta pill strip ──
+    metaStrip: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: Spacing.sm,
+        marginBottom: Spacing.lg,
+    },
+    metaPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.xs + 1,
+        borderRadius: BorderRadius.full,
+        borderWidth: 1,
+    },
+    metaPillText: {
+        fontSize: FontSize.sm,
+        maxWidth: 160,
+    },
+    sectionLabel: {
+        fontSize: FontSize.sm,
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
+        marginBottom: Spacing.xs,
+    },
+    // ── Map button (Location row) ──
+    mapButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: Spacing.md,
+        borderRadius: BorderRadius.md,
+        gap: Spacing.md,
+    },
+    mapButtonIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: BorderRadius.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    mapButtonText: {
+        flex: 1,
+    },
+    mapButtonTitle: {
+        fontSize: FontSize.md,
+        marginBottom: 2,
+    },
+    mapButtonSub: {
+        fontSize: FontSize.xs,
+    },
+    mapOpenBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: Spacing.sm,
+        paddingVertical: Spacing.xs,
+        borderRadius: BorderRadius.full,
+    },
+    mapOpenBadgeText: {
+        fontSize: FontSize.xs,
     },
     msgLabel: {
         fontSize: FontSize.sm,

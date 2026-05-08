@@ -169,15 +169,13 @@ export function useDeleteTaskMutation(userId: string | undefined) {
 
 type ApplyForTaskInput = {
     taskId: string;
-    userId: string;
     message?: string;
 };
 
 /** Call the `apply_for_task` RPC to submit an application. */
-async function applyForTaskFn({ taskId, userId, message }: ApplyForTaskInput) {
+async function applyForTaskFn({ taskId, message }: ApplyForTaskInput) {
     const { data, error } = await supabase.rpc('apply_for_task', {
         p_task_id: taskId,
-        p_applicant_id: userId,
         p_message: message ?? null,
     });
 
@@ -199,7 +197,7 @@ async function applyForTaskFn({ taskId, userId, message }: ApplyForTaskInput) {
 export function useApplyForTaskMutation(userId: string | undefined) {
     return useMutation({
         mutationFn: ({ taskId, message }: { taskId: string; message?: string }) =>
-            applyForTaskFn({ taskId, userId: userId!, message }),
+            applyForTaskFn({ taskId, message }),
         // Optimistic update: immediately show "pending" status
         onMutate: async ({ taskId }) => {
             if (!userId) return;

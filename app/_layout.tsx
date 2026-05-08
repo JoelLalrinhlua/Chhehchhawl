@@ -8,6 +8,11 @@
  * Also loads SpaceGrotesk custom fonts, manages the splash screen,
  * and contains `RootNavigator` which enforces auth-based routing guards
  * (unauthenticated → /login, no profile → /complete-profile, else → tabs).
+ *
+ * Splash screen strategy:
+ *   - Native splash (static image) is hidden immediately once fonts load.
+ *   - A custom full-screen video overlay (splash-screen.mp4) plays on top.
+ *   - Overlay fades out once the video ends AND fonts are ready.
  */
 
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -15,8 +20,9 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
@@ -28,8 +34,62 @@ import { ToastProvider } from '@/contexts/ToastContext';
 import { queryClient } from '@/lib/query-client';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+// Keep the native splash visible until we're ready to show the video
 SplashScreen.preventAutoHideAsync();
 
+// ── Video Splash Overlay ──────────────────────────────────────────────────────
+const SPLASH_VIDEO = require('@/assets/images/splash-screen.mp4');
+
+function VideoSplash({ onFinished }: { onFinished: () => void }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const hasFinished = useRef(false);
+
+  const player = useVideoPlayer(SPLASH_VIDEO, (p) => {
+    p.loop = false;
+    p.muted = false;
+    p.play();
+  });
+
+  const finish = useCallback(() => {
+    if (hasFinished.current) return;
+    hasFinished.current = true;
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    }).start(() => onFinished());
+  }, [opacity, onFinished]);
+
+  useEffect(() => {
+    const sub = player.addListener('playingChange', (event) => {
+      // Video stopped playing (ended)
+      if (!event.isPlaying && player.currentTime > 0) {
+        finish();
+      }
+    });
+    // Safety timeout — dismiss after 5s even if video stalls
+    const timer = setTimeout(finish, 5000);
+    return () => {
+      sub.remove();
+      clearTimeout(timer);
+    };
+  }, [player, finish]);
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, styles.splash, { opacity }]} pointerEvents="none">
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        nativeControls={false}
+        allowsFullscreen={false}
+        allowsPictureInPicture={false}
+      />
+    </Animated.View>
+  );
+}
+
+// ── Root Navigator ────────────────────────────────────────────────────────────
 function RootNavigator() {
   const { isAuthenticated, isProfileComplete, isLoading } = useAuth();
   const { isDark, colors } = useTheme();
@@ -101,6 +161,7 @@ function RootNavigator() {
   );
 }
 
+// ── Root Layout ───────────────────────────────────────────────────────────────
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     'SpaceGrotesk-Light': require('@/assets/fonts/SpaceGrotesk-Light.ttf'),
@@ -110,11 +171,18 @@ export default function RootLayout() {
     'SpaceGrotesk-Bold': require('@/assets/fonts/SpaceGrotesk-Bold.ttf'),
   });
 
+  const [showVideo, setShowVideo] = useState(true);
+
+  // Hide the native splash once fonts are settled; the video overlay takes over
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  const handleVideoFinished = useCallback(() => {
+    setShowVideo(false);
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;
@@ -137,6 +205,16 @@ export default function RootLayout() {
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
+
+      {/* Custom video splash rendered above everything else */}
+      {showVideo && <VideoSplash onFinished={handleVideoFinished} />}
     </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  splash: {
+    backgroundColor: '#000000',
+    zIndex: 9999,
+  },
+});

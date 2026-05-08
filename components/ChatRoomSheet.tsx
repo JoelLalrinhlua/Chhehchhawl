@@ -55,9 +55,9 @@ import {
     Dimensions,
     FlatList,
     Image,
-    KeyboardAvoidingView,
     Linking,
     Modal,
+    Keyboard,
     Platform,
     Pressable,
     ScrollView,
@@ -69,18 +69,64 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Try importing WebView — may fail if native module isn't in the dev client binary
-let WebView: any = null;
-try {
-    WebView = require('react-native-webview').WebView;
-} catch {
-    // WebView not available — will use fallback map UI
-}
+import { WebView } from 'react-native-webview';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const BUBBLE_BLUE = '#2B6CB0';
 const BUBBLE_GREEN = '#2F855A';
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Builds a reliable OpenStreetMap tile URL for a given lat/lng at zoom 15.
+ * Uses tile.openstreetmap.org — far more reliable than static map generators.
+ */
+function getOsmTileUrl(lat: number, lng: number, zoom: number = 15) {
+    const n = Math.pow(2, zoom);
+    const xtile = Math.floor(((lng + 180) / 360) * n);
+    const latRad = (lat * Math.PI) / 180;
+    const ytile = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+    return `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+}
+
+/**
+ * Static map thumbnail built from a real OSM raster tile.
+ * Always works without WebView — shows the tile at zoom 15 with a centred pin.
+ */
+function OsmTileMapImage({ lat, lng, height = 120 }: { lat: number; lng: number; height?: number }) {
+    const [loading, setLoading] = React.useState(true);
+    const [errored, setErrored] = React.useState(false);
+    const tileUrl = getOsmTileUrl(lat, lng, 15);
+
+    if (errored) {
+        return (
+            <View style={{ height, backgroundColor: '#c8e0c8', justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="map-outline" size={32} color="#4a7a5a" />
+                <Text style={{ fontSize: 11, color: '#4a7a5a', marginTop: 4 }}>Map unavailable</Text>
+            </View>
+        );
+    }
+    return (
+        <View style={{ height, overflow: 'hidden' }}>
+            <Image
+                source={{ uri: tileUrl, headers: { 'User-Agent': 'ChhehchhawlApp/1.0' } }}
+                style={{ width: '100%', height: height + 60, marginTop: -30 }}
+                resizeMode="cover"
+                onLoadEnd={() => setLoading(false)}
+                onError={() => { setLoading(false); setErrored(true); }}
+            />
+            {/* Centered pin overlay */}
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ fontSize: 28, marginBottom: 14 }}>📍</Text>
+            </View>
+            {loading && (
+                <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#c8e0c8', justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#4a7a5a" />
+                </View>
+            )}
+        </View>
+    );
+}
+
 
 interface ChatRoomSheetProps {
     roomId: string;
@@ -138,6 +184,8 @@ export function ChatRoomSheet({
     const attachMenuAnim = useRef(new Animated.Value(0)).current;
     const flatListRef = useRef<FlatList<ChatMessage>>(null);
     const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
+    const composerTranslateY = useRef(new Animated.Value(0)).current;
+    const [composerHeight, setComposerHeight] = useState(0);
 
     const { data: messages = [] } = useChatMessagesQuery(roomId, visible);
     const { data: liveSession } = useLiveLocationSessionQuery(roomId, visible);
@@ -668,6 +716,36 @@ export function ChatRoomSheet({
 
     const invertedMessages = [...messages].reverse();
 
+    // ── Keyboard handling (prevents jumpy layout in Modal) ──
+    useEffect(() => {
+        if (!visible) return;
+
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const showSub = Keyboard.addListener(showEvent, (e) => {
+            const height = e?.endCoordinates?.height ?? 0;
+            Animated.timing(composerTranslateY, {
+                toValue: -height,
+                duration: Platform.OS === 'ios' ? e.duration ?? 220 : 180,
+                useNativeDriver: true,
+            }).start();
+        });
+
+        const hideSub = Keyboard.addListener(hideEvent, (e) => {
+            Animated.timing(composerTranslateY, {
+                toValue: 0,
+                duration: Platform.OS === 'ios' ? e?.duration ?? 200 : 160,
+                useNativeDriver: true,
+            }).start();
+        });
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, [visible, composerTranslateY]);
+
     // ── Render a single message ──
     const renderMessage = useCallback(
         ({ item }: { item: ChatMessage }) => {
@@ -791,39 +869,70 @@ export function ChatRoomSheet({
             // Location share message
             if (type === 'location_share') {
                 const meta = item.metadata as LocationShareMetadata | null;
+                const lat = meta?.latitude;
+                const lng = meta?.longitude;
+                const hasCoords = lat != null && lng != null;
+
+                const openInMaps = () => {
+                    if (!hasCoords) return;
+                    // Google Maps web URL — works on all Android/iOS devices
+                    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+                    Linking.openURL(url).catch(() => {
+                        if (Platform.OS === 'android') {
+                            Linking.openURL(`geo:${lat},${lng}?q=${lat},${lng}`);
+                        }
+                    });
+                };
+
+                const bubbleColor = isOwn ? BUBBLE_BLUE : BUBBLE_GREEN;
+
                 return (
                     <View style={[styles.messageBubbleRow, isOwn ? styles.ownRow : styles.otherRow]}>
                         <TouchableOpacity
-                            style={[
-                                styles.locationBubble,
-                                isOwn ? [styles.ownBubble, { backgroundColor: BUBBLE_BLUE }]
-                                    : [styles.otherBubble, { backgroundColor: BUBBLE_GREEN }],
-                            ]}
-                            activeOpacity={0.8}
-                            onPress={() => {
-                                if (meta?.latitude && meta?.longitude) {
-                                    const url = Platform.select({
-                                        ios: `maps://?ll=${meta.latitude},${meta.longitude}`,
-                                        android: `geo:${meta.latitude},${meta.longitude}?q=${meta.latitude},${meta.longitude}`,
-                                    });
-                                    if (url) {
-                                        Linking.canOpenURL(url).then((ok) => {
-                                            Linking.openURL(ok ? url : `https://www.google.com/maps/search/?api=1&query=${meta.latitude},${meta.longitude}`);
-                                        });
-                                    }
-                                }
-                            }}
+                            style={[styles.locationCard, isOwn ? styles.ownBubble : styles.otherBubble]}
+                            activeOpacity={0.85}
+                            onPress={openInMaps}
                         >
-                            <View style={styles.locationCardHeader}>
-                                <Ionicons name="location" size={18} color="#FFF" />
-                                <Text style={[styles.locationCardTitle, { fontFamily: FontFamily.bold }]}>Shared Location</Text>
-                            </View>
-                            {meta?.address && (
-                                <Text style={[styles.locationCardAddress, { fontFamily: FontFamily.regular }]}>{meta.address}</Text>
+                            {/* Map thumbnail — WebView Leaflet (primary), OSM tile image (fallback) */}
+                            {hasCoords ? (
+                                <WebView
+                                    style={styles.locationMapThumb}
+                                    source={{ html: generateStaticMapHTML(lat!, lng!) }}
+                                    scrollEnabled={false}
+                                    javaScriptEnabled
+                                    pointerEvents="none"
+                                    renderError={() => (
+                                        <OsmTileMapImage lat={lat!} lng={lng!} height={120} />
+                                    )}
+                                />
+                            ) : (
+                                <View style={[styles.locationMapThumb, styles.locationMapPlaceholder]}>
+                                    <Ionicons name="map-outline" size={32} color="rgba(255,255,255,0.5)" />
+                                </View>
                             )}
-                            <View style={styles.locationCardFooter}>
-                                <Text style={[styles.locationCardOpen, { fontFamily: FontFamily.medium }]}>Open in Maps →</Text>
-                                <Text style={[styles.messageTime, { color: 'rgba(255,255,255,0.7)' }]}>{formatTime(item.created_at)}</Text>
+
+                            {/* Card body */}
+                            <View style={[styles.locationCardBody, { backgroundColor: bubbleColor }]}>
+                                <View style={styles.locationCardHeader}>
+                                    <Ionicons name="location" size={16} color="#FFF" />
+                                    <Text style={[styles.locationCardTitle, { fontFamily: FontFamily.bold }]}>Shared Location</Text>
+                                </View>
+                                {meta?.address ? (
+                                    <Text style={[styles.locationCardAddress, { fontFamily: FontFamily.regular }]} numberOfLines={2}>
+                                        {meta.address}
+                                    </Text>
+                                ) : hasCoords ? (
+                                    <Text style={[styles.locationCardAddress, { fontFamily: FontFamily.regular }]}>
+                                        {lat!.toFixed(5)}, {lng!.toFixed(5)}
+                                    </Text>
+                                ) : null}
+                                <View style={styles.locationCardFooter}>
+                                    <View style={styles.locationOpenRow}>
+                                        <Ionicons name="navigate" size={12} color="rgba(255,255,255,0.9)" />
+                                        <Text style={[styles.locationCardOpen, { fontFamily: FontFamily.semiBold }]}>Open in Google Maps</Text>
+                                    </View>
+                                    <Text style={[styles.messageTime, { color: 'rgba(255,255,255,0.65)' }]}>{formatTime(item.created_at)}</Text>
+                                </View>
                             </View>
                         </TouchableOpacity>
                     </View>
@@ -958,11 +1067,7 @@ export function ChatRoomSheet({
 
     return (
         <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-            <KeyboardAvoidingView
-                style={[styles.container, { backgroundColor: colors.background }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={0}
-            >
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
                 {/* Header */}
                 <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border, paddingTop: insets.top + Spacing.sm }]}>
                     <Pressable onPress={onClose} style={styles.backButton}>
@@ -1021,33 +1126,33 @@ export function ChatRoomSheet({
                             </TouchableOpacity>
                         </View>
                         {liveMapSession.latitude && liveMapSession.longitude ? (
-                            WebView ? (
-                                <WebView
-                                    style={styles.liveMapWebview}
-                                    source={{
-                                        html: generateMapHTML(liveMapSession.latitude, liveMapSession.longitude),
-                                    }}
-                                    scrollEnabled={false}
-                                    javaScriptEnabled
-                                />
-                            ) : (
-                                <TouchableOpacity
-                                    style={[styles.liveMapFallback, { backgroundColor: colors.card }]}
-                                    activeOpacity={0.7}
-                                    onPress={() => {
-                                        const url = `https://www.google.com/maps/search/?api=1&query=${liveMapSession.latitude},${liveMapSession.longitude}`;
-                                        Linking.openURL(url);
-                                    }}
-                                >
-                                    <Ionicons name="map" size={32} color={colors.accent} />
-                                    <Text style={[styles.liveMapFallbackCoords, { color: colors.text, fontFamily: FontFamily.medium }]}>
-                                        {liveMapSession.latitude.toFixed(5)}, {liveMapSession.longitude.toFixed(5)}
-                                    </Text>
-                                    <Text style={[styles.liveMapFallbackLink, { color: colors.accent, fontFamily: FontFamily.bold }]}>
-                                        Open in Maps →
-                                    </Text>
-                                </TouchableOpacity>
-                            )
+                            <WebView
+                                style={styles.liveMapWebview}
+                                source={{
+                                    html: generateMapHTML(liveMapSession.latitude, liveMapSession.longitude),
+                                }}
+                                scrollEnabled={false}
+                                javaScriptEnabled
+                                renderError={() => (
+                                    <TouchableOpacity
+                                        style={{ flex: 1, backgroundColor: '#f5f5f5' }}
+                                        activeOpacity={0.85}
+                                        onPress={() => {
+                                            const url = `https://www.google.com/maps/search/?api=1&query=${liveMapSession.latitude},${liveMapSession.longitude}`;
+                                            Linking.openURL(url);
+                                        }}
+                                    >
+                                        <OsmTileMapImage
+                                            lat={liveMapSession.latitude!}
+                                            lng={liveMapSession.longitude!}
+                                            height={170}
+                                        />
+                                        <View style={{ position: 'absolute', bottom: 8, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20 }}>
+                                            <Text style={{ color: '#FFF', fontSize: 12, fontFamily: FontFamily.bold }}>Open in Maps →</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+                            />
                         ) : (
                             <View style={[styles.liveMapPlaceholder, { backgroundColor: colors.card }]}>
                                 <ActivityIndicator size="small" color={colors.accent} />
@@ -1059,6 +1164,7 @@ export function ChatRoomSheet({
                     </View>
                 )}
 
+
                 {/* Messages */}
                 <FlatList
                     ref={flatListRef}
@@ -1066,9 +1172,16 @@ export function ChatRoomSheet({
                     renderItem={renderMessage}
                     keyExtractor={(item) => item.id}
                     inverted
-                    contentContainerStyle={styles.messageList}
+                    contentContainerStyle={[
+                        styles.messageList,
+                        {
+                            // Inverted FlatList: paddingTop becomes "bottom padding" visually.
+                            paddingTop: Math.max(composerHeight, 56) + insets.bottom + Spacing.md,
+                        },
+                    ]}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                 />
 
                 {/* Attachment menu overlay */}
@@ -1117,14 +1230,40 @@ export function ChatRoomSheet({
 
                 {/* Input or locked banner */}
                 {isChatLocked ? (
-                    <View style={[styles.lockedBanner, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: insets.bottom + Spacing.sm }]}>
+                    <Animated.View
+                        style={[
+                            styles.lockedBanner,
+                            {
+                                backgroundColor: colors.surface,
+                                borderTopColor: colors.border,
+                                paddingBottom: insets.bottom + Spacing.sm,
+                                transform: [{ translateY: composerTranslateY }],
+                            },
+                        ]}
+                        onLayout={(e) => setComposerHeight(e.nativeEvent.layout.height)}
+                    >
                         <Ionicons name="lock-closed" size={16} color={colors.textMuted} />
                         <Text style={[styles.lockedText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
                             This task has been completed
                         </Text>
-                    </View>
+                    </Animated.View>
                 ) : (
-                    <View style={[styles.inputRow, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: insets.bottom + Spacing.sm }]}>
+                    <Animated.View
+                        style={[
+                            styles.inputRow,
+                            {
+                                backgroundColor: colors.surface,
+                                borderTopColor: colors.border,
+                                paddingBottom: insets.bottom + Spacing.sm,
+                                position: 'absolute',
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                transform: [{ translateY: composerTranslateY }],
+                            },
+                        ]}
+                        onLayout={(e) => setComposerHeight(e.nativeEvent.layout.height)}
+                    >
                         {/* + Attach button */}
                         <Pressable
                             style={[styles.attachButton, { backgroundColor: attachMenuVisible ? colors.accent : colors.card }]}
@@ -1152,9 +1291,9 @@ export function ChatRoomSheet({
                         >
                             <Ionicons name="send" size={20} color={messageText.trim() ? '#FFFFFF' : colors.textMuted} />
                         </Pressable>
-                    </View>
+                    </Animated.View>
                 )}
-            </KeyboardAvoidingView>
+            </View>
 
             {/* Task Detail Sheet (poster view) */}
             {fullTask && taskDetailVisible && (
@@ -1234,6 +1373,24 @@ export function ChatRoomSheet({
 function formatTime(dateStr: string): string {
     const d = new Date(dateStr);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Generate a small static Leaflet map for one-time location share cards. */
+function generateStaticMapHTML(lat: number, lng: number): string {
+    return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>html,body,#map{margin:0;padding:0;width:100%;height:100%}*{pointer-events:none!important}</style>
+</head><body>
+<div id="map"></div>
+<script>
+var map=L.map('map',{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false}).setView([${lat},${lng}],15);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+L.marker([${lat},${lng}]).addTo(map);
+</script>
+</body></html>`;
 }
 
 /** Generate a minimal B&W Leaflet map for the live location WebView. */
@@ -1374,15 +1531,19 @@ const styles = StyleSheet.create({
     },
     chatImageErrorText: { fontSize: FontSize.xs },
 
-    // Location messages
-    locationBubble: {
-        maxWidth: '78%', borderRadius: BorderRadius.lg, padding: Spacing.md, minWidth: 200,
+    // Location messages — enhanced card with map thumbnail
+    locationCard: {
+        maxWidth: '78%', minWidth: 220, borderRadius: BorderRadius.lg, overflow: 'hidden',
     },
-    locationCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-    locationCardTitle: { color: '#FFF', fontSize: FontSize.md },
-    locationCardAddress: { color: 'rgba(255,255,255,0.85)', fontSize: FontSize.sm, lineHeight: 20, marginBottom: 8 },
-    locationCardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    locationCardOpen: { color: 'rgba(255,255,255,0.9)', fontSize: FontSize.xs },
+    locationMapThumb: { height: 120, width: '100%', backgroundColor: '#c8e0c8' },
+    locationMapPlaceholder: { justifyContent: 'center', alignItems: 'center' },
+    locationCardBody: { padding: Spacing.md },
+    locationCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+    locationCardTitle: { color: '#FFF', fontSize: FontSize.sm },
+    locationCardAddress: { color: 'rgba(255,255,255,0.85)', fontSize: FontSize.sm, lineHeight: 18, marginBottom: 6 },
+    locationCardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
+    locationOpenRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    locationCardOpen: { color: 'rgba(255,255,255,0.95)', fontSize: FontSize.xs },
 
     // System messages
     systemMsgRow: { alignItems: 'center', marginBottom: Spacing.md },
@@ -1516,7 +1677,8 @@ function TaskerInfoModal({ visible, onClose, task, taskTitle, colors, insets }: 
 
     if (!visible) return null;
 
-    const hasLocation = task && (task.location || (task.latitude != null && task.longitude != null));
+    const hasCoords = task && task.latitude != null && task.longitude != null;
+    const hasLocation = task && (task.location || hasCoords);
 
     return (
         <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
@@ -1557,32 +1719,95 @@ function TaskerInfoModal({ visible, onClose, task, taskTitle, colors, insets }: 
                                 <Text style={[tiStyles.sectionContent, { color: colors.text, fontFamily: FontFamily.regular }]}>{task.extra_description}</Text>
                             </View>
                         ) : null}
-                        {hasLocation ? (
-                            <View style={[tiStyles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <View style={tiStyles.sectionHeader}>
-                                    <Ionicons name="location-outline" size={15} color={colors.accent} />
-                                    <Text style={[tiStyles.sectionLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>Location</Text>
-                                </View>
-                                {task!.location && (
-                                    <Text style={[tiStyles.sectionContent, { color: colors.text, fontFamily: FontFamily.regular }]}>{task!.location}</Text>
-                                )}
-                                {task!.locality && (
-                                    <Text style={[tiStyles.localityText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>{task!.locality}</Text>
-                                )}
-                                <TouchableOpacity style={[tiStyles.mapsButton, { backgroundColor: colors.accent }]} onPress={handleOpenMaps} activeOpacity={0.8}>
-                                    <Ionicons name="navigate" size={16} color="#FFF" />
-                                    <Text style={[tiStyles.mapsButtonText, { fontFamily: FontFamily.bold }]}>Get Directions</Text>
-                                </TouchableOpacity>
+                        {/* Location section */}
+                        <View style={[tiStyles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={tiStyles.sectionHeader}>
+                                <Ionicons name="location-outline" size={15} color={hasLocation ? colors.accent : colors.textMuted} />
+                                <Text style={[tiStyles.sectionLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>Location</Text>
                             </View>
-                        ) : (
-                            <View style={[tiStyles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <View style={tiStyles.sectionHeader}>
-                                    <Ionicons name="location-outline" size={15} color={colors.textMuted} />
-                                    <Text style={[tiStyles.sectionLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>Location</Text>
-                                </View>
-                                <Text style={[tiStyles.sectionContent, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>No location provided</Text>
-                            </View>
-                        )}
+
+                            {hasLocation ? (
+
+                                <>
+                                    {/* Map thumbnail — tappable to open Google Maps */}
+                                    {hasCoords ? (
+                                        <TouchableOpacity
+                                            style={tiStyles.mapThumbWrapper}
+                                            onPress={handleOpenMaps}
+                                            activeOpacity={0.85}
+                                        >
+                                            <OsmTileMapImage lat={task!.latitude!} lng={task!.longitude!} height={160} />
+                                            {/* "Open in Maps" pill overlay */}
+                                            <View style={tiStyles.mapOpenPill}>
+                                                <Ionicons name="navigate" size={12} color="#FFF" />
+                                                <Text style={tiStyles.mapOpenPillText}>Open in Google Maps</Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    ) : null}
+
+                                    {/* Full address text */}
+                                    {task!.location ? (
+                                        <Text style={[tiStyles.locationAddress, { color: colors.text, fontFamily: FontFamily.medium }]}>
+                                            {task!.location}
+                                        </Text>
+                                    ) : null}
+
+                                    {/* Locality / neighbourhood */}
+                                    {task!.locality ? (
+                                        <View style={tiStyles.locationRow}>
+                                            <Ionicons name="business-outline" size={13} color={colors.textMuted} />
+                                            <Text style={[tiStyles.locationMeta, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                                {task!.locality}
+                                            </Text>
+                                        </View>
+                                    ) : null}
+
+                                    {/* District */}
+                                    {task!.district ? (
+                                        <View style={tiStyles.locationRow}>
+                                            <Ionicons name="map-outline" size={13} color={colors.textMuted} />
+                                            <Text style={[tiStyles.locationMeta, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                                {task!.district} District
+                                            </Text>
+                                        </View>
+                                    ) : null}
+
+                                    {/* State */}
+                                    {task!.state ? (
+                                        <View style={tiStyles.locationRow}>
+                                            <Ionicons name="flag-outline" size={13} color={colors.textMuted} />
+                                            <Text style={[tiStyles.locationMeta, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                                {task!.state}
+                                            </Text>
+                                        </View>
+                                    ) : null}
+
+                                    {/* Coordinates */}
+                                    {hasCoords ? (
+                                        <View style={tiStyles.locationRow}>
+                                            <Ionicons name="compass-outline" size={13} color={colors.textMuted} />
+                                            <Text style={[tiStyles.locationMeta, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                                {task!.latitude!.toFixed(5)}, {task!.longitude!.toFixed(5)}
+                                            </Text>
+                                        </View>
+                                    ) : null}
+
+                                    {/* Directions button */}
+                                    <TouchableOpacity
+                                        style={[tiStyles.mapsButton, { backgroundColor: colors.accent }]}
+                                        onPress={handleOpenMaps}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Ionicons name="navigate" size={16} color="#FFF" />
+                                        <Text style={[tiStyles.mapsButtonText, { fontFamily: FontFamily.bold }]}>Get Directions</Text>
+                                    </TouchableOpacity>
+                                </>
+                            ) : (
+                                <Text style={[tiStyles.sectionContent, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                    No location provided
+                                </Text>
+                            )}
+                        </View>
                     </ScrollView>
                 </View>
             </View>
@@ -1592,7 +1817,7 @@ function TaskerInfoModal({ visible, onClose, task, taskTitle, colors, insets }: 
 
 const tiStyles = StyleSheet.create({
     overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-    sheet: { borderTopLeftRadius: BorderRadius.xxl, borderTopRightRadius: BorderRadius.xxl, maxHeight: '85%', overflow: 'hidden' },
+    sheet: { borderTopLeftRadius: BorderRadius.xxl, borderTopRightRadius: BorderRadius.xxl, maxHeight: '90%', overflow: 'hidden' },
     handleArea: { alignItems: 'center', paddingTop: Spacing.sm, paddingBottom: Spacing.xs },
     handle: { width: 36, height: 4, borderRadius: 2 },
     header: {
@@ -1604,12 +1829,28 @@ const tiStyles = StyleSheet.create({
     headerTitle: { flex: 1, fontSize: FontSize.lg },
     closeBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
     body: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
-    taskTitle: { fontSize: FontSize.xl, marginBottom: Spacing.md },
+    taskTitle: { fontSize: FontSize.xl, marginBottom: Spacing.md, lineHeight: 28 },
     section: { borderRadius: BorderRadius.lg, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.md },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.sm },
     sectionLabel: { fontSize: FontSize.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
     sectionContent: { fontSize: FontSize.md, lineHeight: 22 },
-    localityText: { fontSize: FontSize.sm, marginTop: 2 },
+    // Map thumbnail
+    mapThumbWrapper: {
+        borderRadius: BorderRadius.md, overflow: 'hidden',
+        marginBottom: Spacing.sm,
+    },
+    mapOpenPill: {
+        position: 'absolute', bottom: 8, alignSelf: 'center',
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20,
+    },
+    mapOpenPillText: { color: '#FFF', fontSize: 12, fontFamily: FontFamily.bold },
+    // Location detail rows
+    locationAddress: { fontSize: FontSize.md, lineHeight: 22, marginBottom: 8 },
+    locationRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
+    locationMeta: { fontSize: FontSize.sm, lineHeight: 18 },
+    // Directions button
     mapsButton: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
         marginTop: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.md,

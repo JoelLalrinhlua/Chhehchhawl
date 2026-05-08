@@ -2,33 +2,28 @@
   "expo": {
     "name": "Chhehchhawl",
     "slug": "chhehchhawl",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icons/icon.png",
     "scheme": "chhehchhawl",
     "userInterfaceStyle": "automatic",
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.joel.chhehchhawl"
     },
-
     "android": {
       "package": "com.joel.chhehchhawl",
+      "versionCode": 2,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/icons/adaptive-icon.png",
+        "backgroundColor": "#121212"
       },
       "predictiveBackGestureEnabled": false
     },
-
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/icons/favicon.png"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -41,12 +36,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/icons/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#121212",
           "dark": {
-            "backgroundColor": "#000000"
+            "image": "./assets/images/icons/splash-icon.png",
+            "backgroundColor": "#121212"
           }
         }
       ],
@@ -56,19 +52,16 @@
       "expo-image",
       "expo-secure-store"
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "router": {},
       "eas": {
         "projectId": "9f8ebf93-a5e3-4bc1-96fb-9fc1957858f1"
       }
     },
-
     "owner": "shibya"
   }
 }

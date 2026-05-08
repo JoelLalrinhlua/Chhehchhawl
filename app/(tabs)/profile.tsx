@@ -178,14 +178,6 @@ export default function ProfileScreen() {
                         </View>
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
-                    <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
-                    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
-                        <View style={styles.settingLeft}>
-                            <Ionicons name="shield-outline" size={22} color={colors.textSecondary} />
-                            <Text style={[styles.settingText, { color: colors.text }]}>Privacy</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -193,10 +185,26 @@ export default function ProfileScreen() {
             <View>
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Support</Text>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
-                    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={() => router.push('/help-center' as any)}
+                        activeOpacity={0.7}
+                    >
                         <View style={styles.settingLeft}>
                             <Ionicons name="help-circle-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Help Center</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                    </TouchableOpacity>
+                    <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={() => router.push('/privacy' as any)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.settingLeft}>
+                            <Ionicons name="shield-checkmark-outline" size={22} color={colors.textSecondary} />
+                            <Text style={[styles.settingText, { color: colors.text }]}>Privacy Policy</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
@@ -238,6 +246,7 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                 </View>
             </View>
+
 
             {/* Logout */}
             <View>

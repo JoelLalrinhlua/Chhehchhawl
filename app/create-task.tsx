@@ -22,6 +22,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -252,9 +253,29 @@ export default function CreateTaskScreen() {
         };
 
         const uploadSingle = async (item: MediaItem, i: number) => {
-            const ext = item.uri.split('.').pop()?.split('?')[0]?.toLowerCase() || (item.type === 'image' ? 'jpg' : 'mp4');
+            let uploadUri = item.uri;
+            let uploadExt = item.uri.split('.').pop()?.split('?')[0]?.toLowerCase() || (item.type === 'image' ? 'jpg' : 'mp4');
+
+            // ── Compress images before upload ──
+            // Resize to max 1200px wide and compress to JPEG quality 0.7.
+            // This reduces typical file sizes from 3-8 MB down to 200-500 KB,
+            // making them load ~10-15x faster in the carousel.
+            if (item.type === 'image') {
+                try {
+                    const compressed = await ImageManipulator.manipulateAsync(
+                        item.uri,
+                        [{ resize: { width: 1200 } }],
+                        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+                    );
+                    uploadUri = compressed.uri;
+                    uploadExt = 'jpg';
+                } catch {
+                    // If compression fails, fall back to original URI
+                }
+            }
+
             const contentType = getMimeType(item.uri, item.type);
-            const fileName = `${timestamp}_${i}.${ext}`;
+            const fileName = `${timestamp}_${i}.${uploadExt}`;
             const storagePath = `tasks/${user.id}/${fileName}`;
 
             // Verify session is still valid before uploading
@@ -272,7 +293,7 @@ export default function CreateTaskScreen() {
             // avoiding the Blob serialisation bug that causes "Network request failed".
             const formData = new FormData();
             formData.append('', {
-                uri: item.uri,
+                uri: uploadUri,
                 name: fileName,
                 type: contentType,
             } as any);
@@ -848,16 +869,16 @@ export default function CreateTaskScreen() {
                 <View
                     style={[styles.summaryModal, { backgroundColor: colors.card }]}
                 >
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                        <View style={styles.summaryModalHeader}>
-                            <Ionicons name="document-text" size={24} color={colors.accent} />
-                            <Text style={[styles.summaryModalTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
-                                Task Summary
-                            </Text>
-                        </View>
+                    <View style={styles.summaryModalHeader}>
+                        <Ionicons name="document-text" size={24} color={colors.accent} />
+                        <Text style={[styles.summaryModalTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
+                            Task Summary
+                        </Text>
+                    </View>
 
-                        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+                    <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
 
+                    <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
                         {/* Summary Rows */}
                         <SummaryRow label="Title" value={title || '—'} colors={colors} />
                         <SummaryRow label="Description" value={description || '—'} colors={colors} />
@@ -873,11 +894,10 @@ export default function CreateTaskScreen() {
                         <SummaryRow label="Urgency" value={urgency ? urgency.charAt(0).toUpperCase() + urgency.slice(1) : 'Not set'} colors={colors} />
                         <SummaryRow label="Negotiable" value={negotiable ? 'Yes' : 'No'} colors={colors} />
                         <SummaryRow label="Media" value={`${imageCount} image(s), ${videoCount} video(s)`} colors={colors} />
-
                         <View style={[styles.summaryDivider, { backgroundColor: colors.border, marginTop: Spacing.lg }]} />
                     </ScrollView>
 
-                    {/* Modal Actions */}
+                    {/* Modal Actions — always visible outside ScrollView */}
                     <View style={styles.summaryActions}>
                         <Pressable
                             style={[styles.cancelButton, { borderColor: colors.border, flex: 1 }]}
@@ -890,10 +910,15 @@ export default function CreateTaskScreen() {
                         <Pressable
                             style={[styles.continueButton, { backgroundColor: colors.accent, flex: 1.5 }]}
                             onPress={handleConfirmSubmit}
+                            disabled={loading}
                         >
-                            <Text style={[styles.continueText, { fontFamily: FontFamily.bold }]}>
-                                Confirm & Submit
-                            </Text>
+                            {loading ? (
+                                <ActivityIndicator color="#FFF" size="small" />
+                            ) : (
+                                <Text style={[styles.continueText, { fontFamily: FontFamily.bold }]}>
+                                    Confirm & Submit
+                                </Text>
+                            )}
                         </Pressable>
                     </View>
                 </View>
@@ -983,9 +1008,9 @@ export default function CreateTaskScreen() {
                     ) : (
                         <Animated.View style={[submitAnimatedStyle, { flex: 2 }]}>
                             <Pressable
-                                style={[styles.continueButton, { backgroundColor: isFormValid ? colors.accent : colors.border, flex: 1 }]}
+                                style={[styles.continueButton, { backgroundColor: colors.accent, flex: 1, opacity: loading ? 0.7 : 1 }]}
                                 onPress={handleSubmitPress}
-                                disabled={loading || !isFormValid}
+                                disabled={loading}
                             >
                                 {loading ? (
                                     <ActivityIndicator color="#FFF" />
@@ -1278,10 +1303,11 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     summaryModal: {
-        maxHeight: SCREEN_HEIGHT * 0.75,
+        maxHeight: SCREEN_HEIGHT * 0.8,
         borderTopLeftRadius: BorderRadius.xl,
         borderTopRightRadius: BorderRadius.xl,
         padding: Spacing.xl,
+        flexDirection: 'column',
     },
     summaryModalHeader: {
         flexDirection: 'row',

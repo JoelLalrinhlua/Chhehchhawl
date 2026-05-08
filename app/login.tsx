@@ -17,12 +17,14 @@ import { checkPasswordStrength, isValidEmail } from '@/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
     KeyboardAvoidingView,
+    Modal,
     Platform,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -48,9 +50,13 @@ export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showVerifyModal, setShowVerifyModal] = useState(false);
+    const signedUpEmail = useRef('');
 
     // Client-side brute-force protection: lock out after 5 failed sign-in attempts
     const [failedAttempts, setFailedAttempts] = useState(0);
@@ -125,7 +131,8 @@ export default function LoginScreen() {
                 }
             }
         } else if (isSignUp) {
-            showToast('Check your email — we sent a confirmation link.', 'info');
+            signedUpEmail.current = email.trim();
+            setShowVerifyModal(true);
         } else {
             // Successful sign-in — reset attempt counter
             setFailedAttempts(0);
@@ -144,6 +151,14 @@ export default function LoginScreen() {
     };
 
     const styles = makeStyles(colors);
+
+    const handleGoToSignIn = () => {
+        setShowVerifyModal(false);
+        setIsSignUp(false);
+        setPassword('');
+        setConfirmPassword('');
+        setError(null);
+    };
 
     return (
         <KeyboardAvoidingView
@@ -188,29 +203,56 @@ export default function LoginScreen() {
                         keyboardType="email-address"
                         autoCapitalize="none"
                     />
-                    <AnimatedInput
-                        placeholder="Password"
-                        value={password}
-                        onChangeText={(t: string) => { setPassword(t); setError(null); }}
-                        secureTextEntry
-                    />
+                    {/* Password field with show/hide toggle */}
+                    <View style={styles.passwordWrapper}>
+                        <AnimatedInput
+                            placeholder="Password"
+                            value={password}
+                            onChangeText={(t: string) => { setPassword(t); setError(null); }}
+                            secureTextEntry={!showPassword}
+                            containerStyle={{ flex: 1 }}
+                        />
+                        <Pressable
+                            style={styles.eyeBtn}
+                            onPress={() => setShowPassword(v => !v)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            <Ionicons
+                                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                size={22}
+                                color={colors.textMuted}
+                            />
+                        </Pressable>
+                    </View>
                     {isSignUp && (
                         <>
-                            <AnimatedInput
-                                placeholder="Confirm password"
-                                value={confirmPassword}
-                                onChangeText={(t: string) => { setConfirmPassword(t); setError(null); }}
-                                secureTextEntry
-                            />
+                            {/* Confirm password with show/hide toggle */}
+                            <View style={styles.passwordWrapper}>
+                                <AnimatedInput
+                                    placeholder="Confirm password"
+                                    value={confirmPassword}
+                                    onChangeText={(t: string) => { setConfirmPassword(t); setError(null); }}
+                                    secureTextEntry={!showConfirmPassword}
+                                    containerStyle={{ flex: 1 }}
+                                />
+                                <Pressable
+                                    style={styles.eyeBtn}
+                                    onPress={() => setShowConfirmPassword(v => !v)}
+                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                >
+                                    <Ionicons
+                                        name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                                        size={22}
+                                        color={colors.textMuted}
+                                    />
+                                </Pressable>
+                            </View>
                             {/* Password strength hints */}
                             {password.length > 0 && (
                                 <Animated.View entering={FadeIn.duration(200)} style={styles.strengthContainer}>
                                     {[
                                         { ok: password.length >= 8, label: '8+ characters' },
-                                        { ok: /[A-Z]/.test(password), label: 'Uppercase' },
-                                        { ok: /[a-z]/.test(password), label: 'Lowercase' },
-                                        { ok: /\d/.test(password), label: 'Number' },
-                                        { ok: /[^A-Za-z0-9]/.test(password), label: 'Special char' },
+                                        { ok: /\d/.test(password), label: 'Contains a number' },
                                     ].map((r) => (
                                         <View key={r.label} style={styles.strengthRow}>
                                             <Ionicons
@@ -302,6 +344,51 @@ export default function LoginScreen() {
                     </TouchableOpacity>
                 </Animated.View>
             </ScrollView>
+
+            {/* ── Email Verification Modal ── */}
+            <Modal
+                visible={showVerifyModal}
+                transparent
+                animationType="fade"
+                statusBarTranslucent
+            >
+                <View style={styles.modalOverlay}>
+                    <Animated.View entering={FadeInDown.duration(400)} style={[styles.modalCard, { backgroundColor: colors.card }]}>
+                        {/* Icon */}
+                        <View style={styles.modalIconWrapper}>
+                            <View style={[styles.modalIconBg, { backgroundColor: colors.accent + '22' }]}>
+                                <Ionicons name="mail-outline" size={40} color={colors.accent} />
+                            </View>
+                        </View>
+
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>Check your inbox!</Text>
+
+                        <Text style={[styles.modalBody, { color: colors.textMuted }]}>
+                            We've sent a confirmation link to{' '}
+                            <Text style={[styles.modalEmail, { color: colors.accent }]}>
+                                {signedUpEmail.current}
+                            </Text>
+                            {'. Please open it to verify your account before signing in.'}
+                        </Text>
+
+                        {/* Divider */}
+                        <View style={[styles.modalDivider, { backgroundColor: colors.border }]} />
+
+                        <Text style={[styles.modalHint, { color: colors.textMuted }]}>
+                            Didn't receive it? Check your spam folder or wait a few minutes.
+                        </Text>
+
+                        <TouchableOpacity
+                            style={[styles.modalBtn, { backgroundColor: colors.accent }]}
+                            onPress={handleGoToSignIn}
+                            activeOpacity={0.85}
+                        >
+                            <Ionicons name="arrow-back-outline" size={18} color="#FFF" />
+                            <Text style={styles.modalBtnText}>Go to Sign In</Text>
+                        </TouchableOpacity>
+                    </Animated.View>
+                </View>
+            </Modal>
         </KeyboardAvoidingView>
     );
 }
@@ -442,5 +529,90 @@ const makeStyles = (colors: any) =>
         strengthLabel: {
             fontSize: FontSize.xs,
             fontFamily: FontFamily.medium,
+        },
+        passwordWrapper: {
+            position: 'relative',
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        eyeBtn: {
+            position: 'absolute',
+            right: 14,
+            top: 0,
+            bottom: 0,
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10,
+        },
+        // ── Verification Modal ──
+        modalOverlay: {
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 28,
+        },
+        modalCard: {
+            width: '100%',
+            borderRadius: 24,
+            padding: 28,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOpacity: 0.25,
+            shadowRadius: 20,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 12,
+        },
+        modalIconWrapper: {
+            marginBottom: 20,
+        },
+        modalIconBg: {
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        modalTitle: {
+            fontSize: FontSize.xl,
+            fontFamily: FontFamily.bold,
+            marginBottom: 12,
+            textAlign: 'center',
+        },
+        modalBody: {
+            fontSize: FontSize.sm,
+            fontFamily: FontFamily.regular,
+            textAlign: 'center',
+            lineHeight: 22,
+            marginBottom: 20,
+        },
+        modalEmail: {
+            fontFamily: FontFamily.semiBold,
+        },
+        modalDivider: {
+            width: '100%',
+            height: 1,
+            marginBottom: 16,
+        },
+        modalHint: {
+            fontSize: FontSize.xs,
+            fontFamily: FontFamily.regular,
+            textAlign: 'center',
+            marginBottom: 24,
+            lineHeight: 18,
+        },
+        modalBtn: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            width: '100%',
+            height: 50,
+            borderRadius: BorderRadius.lg,
+        },
+        modalBtnText: {
+            color: '#FFF',
+            fontSize: FontSize.md,
+            fontFamily: FontFamily.bold,
         },
     });

@@ -56,6 +56,7 @@ const IMAGE_QUALITY = 0.65;
 // Cooldown windows
 const USERNAME_COOLDOWN_DAYS  = 7;   // 1 week
 const FULLNAME_COOLDOWN_DAYS  = 30;  // 1 month
+const UPI_COOLDOWN_DAYS       = 30;  // 1 month
 
 /**
  * Returns null if the field is NOT in cooldown (can be changed).
@@ -89,6 +90,7 @@ export default function EditProfileScreen() {
     const [fullName,    setFullName]    = useState(profile?.full_name  ?? '');
     const [username,    setUsername]    = useState(profile?.username   ?? '');
     const [bio,         setBio]         = useState(profile?.bio        ?? '');
+    const [upiId,       setUpiId]       = useState((profile as any)?.upi_id ?? '');
     const [avatarUri,   setAvatarUri]   = useState<string | null>(profile?.avatar_url ?? null);
 
     const [debouncedUsername, setDebouncedUsername] = useState('');
@@ -101,8 +103,10 @@ export default function EditProfileScreen() {
     // ── Cooldown guards ─────────────────────────────────────────────────────
     const usernameCooldown  = getCooldownMessage(profile?.username_updated_at,  USERNAME_COOLDOWN_DAYS);
     const fullNameCooldown  = getCooldownMessage(profile?.full_name_updated_at, FULLNAME_COOLDOWN_DAYS);
+    const upiCooldown       = getCooldownMessage((profile as any)?.upi_id_updated_at, UPI_COOLDOWN_DAYS);
     const isUsernameLocked  = !!usernameCooldown;
     const isFullNameLocked  = !!fullNameCooldown;
+    const isUpiLocked       = !!upiCooldown;
 
     const handleLockedFullNamePress = () => {
         showToast(`Full name locked for ${FULLNAME_COOLDOWN_DAYS} days. ${fullNameCooldown}`, 'info');
@@ -110,6 +114,10 @@ export default function EditProfileScreen() {
 
     const handleLockedUsernamePress = () => {
         showToast(`Username locked for ${USERNAME_COOLDOWN_DAYS} days. ${usernameCooldown}`, 'info');
+    };
+
+    const handleLockedUpiPress = () => {
+        showToast(`UPI ID locked for ${UPI_COOLDOWN_DAYS} days. ${upiCooldown}`, 'info');
     };
 
 
@@ -133,6 +141,7 @@ export default function EditProfileScreen() {
         setFullName(profile?.full_name  ?? '');
         setUsername(profile?.username   ?? '');
         setBio(profile?.bio             ?? '');
+        setUpiId((profile as any)?.upi_id ?? '');
         setAvatarUri(profile?.avatar_url ?? null);
     }, [profile]);
 
@@ -236,6 +245,11 @@ export default function EditProfileScreen() {
             return;
         }
 
+        if (!isUpiLocked && upiId.trim() && !upiId.includes('@')) {
+            setError('UPI ID must contain @ (e.g. name@upi)');
+            return;
+        }
+
         setSaving(true);
         setError(null);
         saveScale.value = withTiming(0.96, { duration: 60 });
@@ -244,6 +258,15 @@ export default function EditProfileScreen() {
         const payload: Record<string, any> = {
             bio: bio.trim() || null,
         };
+
+        if (!isUpiLocked) {
+            const newUpi = upiId.trim() || null;
+            const oldUpi = (profile as any)?.upi_id ?? null;
+            if (newUpi !== oldUpi) {
+                payload.upi_id = newUpi;
+                payload.upi_id_updated_at = new Date().toISOString();
+            }
+        }
 
         if (!isFullNameLocked) {
             payload.full_name          = fullName.trim();
@@ -461,6 +484,33 @@ export default function EditProfileScreen() {
                         multiline
                         numberOfLines={4}
                     />
+                </Animated.View>
+
+                {/* UPI ID */}
+                <Animated.View entering={FadeInDown.delay(250).duration(350)} style={styles.fieldGroup}>
+                    <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>UPI ID</Text>
+                    <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                        For receiving payments · Can be changed once a month
+                    </Text>
+                    {isUpiLocked ? (
+                        <TouchableOpacity onPress={handleLockedUpiPress} activeOpacity={0.7}>
+                            <View style={[styles.readonlyField, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Ionicons name="wallet-outline" size={16} color={colors.textMuted} />
+                                <Text style={[styles.readonlyText, { color: colors.textSecondary, flex: 1 }]} numberOfLines={1}>
+                                    {upiId || 'Not set'}
+                                </Text>
+                                <Ionicons name="lock-closed" size={15} color={colors.textMuted} />
+                            </View>
+                        </TouchableOpacity>
+                    ) : (
+                        <AnimatedInput
+                            placeholder="e.g. yourname@upi"
+                            value={upiId}
+                            onChangeText={(t: string) => { setUpiId(t.trim()); setError(null); }}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                        />
+                    )}
                 </Animated.View>
 
                 {/* Location (read-only) */}

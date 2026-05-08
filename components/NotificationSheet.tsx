@@ -1,8 +1,13 @@
 /**
- * NotificationSheet.tsx — Full-screen modal for the notification center.
+ * NotificationSheet.tsx — Full-screen notification center.
  *
- * Shows a list of in-app notifications (application accepted/rejected,
- * task completion events). Supports mark-as-read and real-time updates.
+ * Features:
+ *  • Filter tabs: All | Messages | Applications | System
+ *  • Unread dot indicator per item
+ *  • "Mark all as read" button
+ *  • Navigation callback on tap (open related chat or task)
+ *  • Real-time Supabase subscription
+ *  • Empty state with icon
  */
 
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
@@ -15,18 +20,21 @@ import {
 import {
     useNotificationsQuery,
     type Notification,
+    type NotificationType,
 } from '@/hooks/use-notification-queries';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     FlatList,
     Modal,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
+    TouchableOpacity,
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,263 +42,224 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface NotificationSheetProps {
     visible: boolean;
     onClose: () => void;
+    /** Called when user taps a notification with a chat reference_id */
+    onOpenChat?: (roomId: string) => void;
 }
 
-const ICON_MAP: Record<
-    Notification['type'],
-    { name: keyof typeof Ionicons.glyphMap; colorKey: 'statusGreen' | 'statusRed' | 'statusOrange' | 'accent' }
-> = {
-    application_accepted: { name: 'checkmark-circle', colorKey: 'statusGreen' },
-    application_rejected: { name: 'close-circle', colorKey: 'statusRed' },
-    task_pending_confirmation: { name: 'hourglass', colorKey: 'statusOrange' },
-    task_completed: { name: 'trophy', colorKey: 'accent' },
+type FilterTab = 'all' | 'messages' | 'applications' | 'system';
+
+const FILTER_TABS: { key: FilterTab; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'messages', label: 'Messages' },
+    { key: 'applications', label: 'Applications' },
+    { key: 'system', label: 'System' },
+];
+
+const ICON_MAP: Record<NotificationType, {
+    name: keyof typeof Ionicons.glyphMap;
+    colorKey: 'statusGreen' | 'statusRed' | 'statusOrange' | 'accent';
+}> = {
+    application_received:       { name: 'person-add',          colorKey: 'accent' },
+    application_accepted:       { name: 'checkmark-circle',    colorKey: 'statusGreen' },
+    application_rejected:       { name: 'close-circle',        colorKey: 'statusRed' },
+    task_pending_confirmation:  { name: 'hourglass',           colorKey: 'statusOrange' },
+    task_completed:             { name: 'trophy',              colorKey: 'statusGreen' },
+    new_message:                { name: 'chatbubble-ellipses', colorKey: 'accent' },
+    task_cancelled:             { name: 'ban',                 colorKey: 'statusRed' },
 };
 
-export function NotificationSheet({ visible, onClose }: NotificationSheetProps) {
+function getFilterForType(type: NotificationType): FilterTab {
+    if (type === 'new_message') return 'messages';
+    if (type === 'application_received' || type === 'application_accepted' || type === 'application_rejected') return 'applications';
+    return 'system';
+}
+
+export function NotificationSheet({ visible, onClose, onOpenChat }: NotificationSheetProps) {
     const { colors } = useTheme();
     const { user } = useAuth();
     const insets = useSafeAreaInsets();
+    const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
 
-    const { data: notifications = [], isLoading } = useNotificationsQuery(
-        user?.id,
-        visible
-    );
+    const { data: notifications = [], isLoading } = useNotificationsQuery(user?.id, visible);
     const markReadMutation = useMarkNotificationReadMutation(user?.id);
     const markAllReadMutation = useMarkAllNotificationsReadMutation(user?.id);
 
-    // Realtime subscription for live notification updates
+    // Real-time subscription
     useEffect(() => {
         if (!visible || !user?.id) return;
-
         const channel = supabase
             .channel('notifications-sheet')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'notifications',
-                    filter: `user_id=eq.${user.id}`,
-                },
-                () => {
-                    queryClient.invalidateQueries({
-                        queryKey: queryKeys.notifications.list(user.id),
-                    });
-                    queryClient.invalidateQueries({
-                        queryKey: queryKeys.notifications.unreadCount(user.id),
-                    });
-                }
-            )
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'notifications',
+                filter: `user_id=eq.${user.id}`,
+            }, () => {
+                queryClient.invalidateQueries({ queryKey: queryKeys.notifications.list(user.id) });
+                queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(user.id) });
+            })
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [visible, user?.id]);
 
-    const hasUnread = notifications.some((n) => !n.read);
+    const filtered = useMemo(() => {
+        if (activeFilter === 'all') return notifications;
+        return notifications.filter(n => getFilterForType(n.type) === activeFilter);
+    }, [notifications, activeFilter]);
+
+    const hasUnread = notifications.some(n => !n.read);
+
+    const handleTap = useCallback((item: Notification) => {
+        if (!item.read) markReadMutation.mutate({ notificationId: item.id });
+        if (item.reference_type === 'chat' && item.reference_id && onOpenChat) {
+            onClose();
+            setTimeout(() => onOpenChat(item.reference_id!), 300);
+        }
+    }, [markReadMutation, onOpenChat, onClose]);
 
     const handleMarkAllRead = useCallback(() => {
-        if (!hasUnread) return;
-        markAllReadMutation.mutate();
+        if (hasUnread) markAllReadMutation.mutate();
     }, [hasUnread, markAllReadMutation]);
 
-    const handleTapNotification = useCallback(
-        (item: Notification) => {
-            if (!item.read) {
-                markReadMutation.mutate({ notificationId: item.id });
-            }
-        },
-        [markReadMutation]
-    );
-
-    const renderItem = useCallback(
-        ({ item }: { item: Notification }) => {
-            const iconCfg = ICON_MAP[item.type] ?? ICON_MAP.task_completed;
-            const iconColor = colors[iconCfg.colorKey];
-
-            return (
-                <Pressable
-                    style={[
-                        styles.notifItem,
-                        {
-                            backgroundColor: item.read
-                                ? colors.card
-                                : iconColor + '08',
-                            borderColor: item.read ? colors.border : iconColor + '20',
-                        },
-                    ]}
-                    onPress={() => handleTapNotification(item)}
-                >
-                    <View
-                        style={[
-                            styles.notifIcon,
-                            { backgroundColor: iconColor + '15' },
-                        ]}
-                    >
-                        <Ionicons name={iconCfg.name} size={22} color={iconColor} />
-                    </View>
-                    <View style={styles.notifContent}>
-                        <View style={styles.notifTitleRow}>
-                            <Text
-                                style={[
-                                    styles.notifTitle,
-                                    {
-                                        color: colors.text,
-                                        fontFamily: item.read
-                                            ? FontFamily.medium
-                                            : FontFamily.bold,
-                                    },
-                                ]}
-                                numberOfLines={1}
-                            >
-                                {item.title}
-                            </Text>
-                            {!item.read && (
-                                <View
-                                    style={[
-                                        styles.unreadDot,
-                                        { backgroundColor: colors.accent },
-                                    ]}
-                                />
-                            )}
-                        </View>
+    const renderItem = useCallback(({ item }: { item: Notification }) => {
+        const iconCfg = ICON_MAP[item.type] ?? ICON_MAP.task_completed;
+        const iconColor = colors[iconCfg.colorKey];
+        return (
+            <Pressable
+                style={[
+                    styles.notifItem,
+                    {
+                        backgroundColor: item.read ? colors.card : iconColor + '10',
+                        borderColor: item.read ? colors.border : iconColor + '30',
+                    },
+                ]}
+                onPress={() => handleTap(item)}
+            >
+                <View style={[styles.notifIcon, { backgroundColor: iconColor + '18' }]}>
+                    <Ionicons name={iconCfg.name} size={22} color={iconColor} />
+                </View>
+                <View style={styles.notifContent}>
+                    <View style={styles.notifTitleRow}>
                         <Text
-                            style={[
-                                styles.notifBody,
-                                {
-                                    color: colors.textSecondary,
-                                    fontFamily: FontFamily.regular,
-                                },
-                            ]}
-                            numberOfLines={2}
+                            style={[styles.notifTitle, {
+                                color: colors.text,
+                                fontFamily: item.read ? FontFamily.medium : FontFamily.bold,
+                            }]}
+                            numberOfLines={1}
                         >
-                            {item.body}
+                            {item.title}
                         </Text>
-                        <Text
-                            style={[
-                                styles.notifTime,
-                                {
-                                    color: colors.textMuted,
-                                    fontFamily: FontFamily.regular,
-                                },
-                            ]}
-                        >
-                            {formatTimeAgo(item.created_at)}
-                        </Text>
+                        {!item.read && (
+                            <View style={[styles.unreadDot, { backgroundColor: colors.accent }]} />
+                        )}
                     </View>
-                </Pressable>
-            );
-        },
-        [colors, handleTapNotification]
-    );
-
-    const renderEmpty = useCallback(
-        () => (
-            <View style={styles.emptyContainer}>
-                <Ionicons
-                    name="notifications-off-outline"
-                    size={48}
-                    color={colors.textMuted}
-                />
-                <Text
-                    style={[
-                        styles.emptyText,
-                        { color: colors.textMuted, fontFamily: FontFamily.regular },
-                    ]}
-                >
-                    {isLoading ? 'Loading notifications...' : 'No notifications yet'}
-                </Text>
-                {!isLoading && (
                     <Text
-                        style={[
-                            styles.emptySubtext,
-                            { color: colors.textMuted, fontFamily: FontFamily.regular },
-                        ]}
+                        style={[styles.notifBody, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}
+                        numberOfLines={2}
                     >
-                        You'll be notified when someone accepts your application or completes a task.
+                        {item.body}
                     </Text>
+                    <Text style={[styles.notifTime, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                        {formatTimeAgo(item.created_at)}
+                    </Text>
+                </View>
+                {item.reference_type === 'chat' && (
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
                 )}
-            </View>
-        ),
-        [colors, isLoading]
-    );
+            </Pressable>
+        );
+    }, [colors, handleTap]);
+
+    const renderEmpty = useCallback(() => (
+        <View style={styles.emptyContainer}>
+            <Ionicons name="notifications-off-outline" size={52} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                {isLoading ? 'Loading...' : 'No notifications yet'}
+            </Text>
+            {!isLoading && (
+                <Text style={[styles.emptySubtext, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                    You'll be notified about applications, messages, and task updates here.
+                </Text>
+            )}
+        </View>
+    ), [colors, isLoading]);
 
     if (!visible) return null;
 
     return (
-        <Modal
-            visible={visible}
-            animationType="slide"
-            statusBarTranslucent
-            onRequestClose={onClose}
-        >
-            <View
-                style={[
-                    styles.container,
-                    {
-                        backgroundColor: colors.background,
-                        paddingTop: insets.top,
-                        paddingBottom: insets.bottom,
-                    },
-                ]}
-            >
+        <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+            <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 {/* Header */}
-                <View
-                    style={[
-                        styles.header,
-                        {
-                            backgroundColor: colors.surface,
-                            borderBottomColor: colors.border,
-                        },
-                    ]}
-                >
+                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                     <Pressable onPress={onClose} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </Pressable>
-                    <Text
-                        style={[
-                            styles.headerTitle,
-                            { color: colors.text, fontFamily: FontFamily.bold },
-                        ]}
-                    >
+                    <Text style={[styles.headerTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
                         Notifications
                     </Text>
-                    {hasUnread && (
+                    {hasUnread ? (
                         <Pressable
                             onPress={handleMarkAllRead}
                             style={styles.markAllButton}
                             disabled={markAllReadMutation.isPending}
                         >
-                            <Text
-                                style={[
-                                    styles.markAllText,
-                                    {
-                                        color: colors.accent,
-                                        fontFamily: FontFamily.medium,
-                                    },
-                                ]}
-                            >
-                                Read all
+                            <Text style={[styles.markAllText, { color: colors.accent, fontFamily: FontFamily.medium }]}>
+                                Mark all read
                             </Text>
                         </Pressable>
+                    ) : (
+                        <View style={styles.markAllButton} />
                     )}
+                </View>
+
+                {/* Filter Tabs */}
+                <View style={[styles.filterBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+                        {FILTER_TABS.map(tab => {
+                            const isActive = activeFilter === tab.key;
+                            const count = tab.key === 'all'
+                                ? notifications.filter(n => !n.read).length
+                                : notifications.filter(n => !n.read && getFilterForType(n.type) === tab.key).length;
+                            return (
+                                <TouchableOpacity
+                                    key={tab.key}
+                                    style={[
+                                        styles.filterTab,
+                                        isActive && { backgroundColor: colors.accent + '18', borderColor: colors.accent },
+                                        !isActive && { borderColor: colors.border },
+                                    ]}
+                                    onPress={() => setActiveFilter(tab.key)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[
+                                        styles.filterTabText,
+                                        { color: isActive ? colors.accent : colors.textMuted, fontFamily: isActive ? FontFamily.semiBold : FontFamily.regular },
+                                    ]}>
+                                        {tab.label}
+                                    </Text>
+                                    {count > 0 && (
+                                        <View style={[styles.filterBadge, { backgroundColor: colors.accent }]}>
+                                            <Text style={styles.filterBadgeText}>{count > 9 ? '9+' : count}</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
                 </View>
 
                 {/* List */}
                 <FlatList
-                    data={notifications}
+                    data={filtered}
                     renderItem={renderItem}
-                    keyExtractor={(item) => item.id}
+                    keyExtractor={item => item.id}
                     contentContainerStyle={[
                         styles.listContent,
-                        notifications.length === 0 && styles.listContentEmpty,
+                        filtered.length === 0 && styles.listContentEmpty,
                     ]}
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={renderEmpty}
-                    ItemSeparatorComponent={() => (
-                        <View style={{ height: Spacing.sm }} />
-                    )}
+                    ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
                 />
             </View>
         </Modal>
@@ -312,97 +281,50 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
+    container: { flex: 1 },
     header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.md,
+        flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
         borderBottomWidth: 1,
     },
-    backButton: {
-        width: 40,
-        height: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
+    backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { flex: 1, fontSize: FontSize.xl, marginLeft: Spacing.sm },
+    markAllButton: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, minWidth: 80, alignItems: 'flex-end' },
+    markAllText: { fontSize: FontSize.sm },
+    filterBar: { borderBottomWidth: 1 },
+    filterScroll: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.sm },
+    filterTab: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        paddingHorizontal: Spacing.md, paddingVertical: 6,
+        borderRadius: BorderRadius.full, borderWidth: 1,
     },
-    headerTitle: {
-        flex: 1,
-        fontSize: FontSize.xl,
-        marginLeft: Spacing.sm,
+    filterTabText: { fontSize: FontSize.sm },
+    filterBadge: {
+        minWidth: 18, height: 18, borderRadius: 9,
+        justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
     },
-    markAllButton: {
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.sm,
-    },
-    markAllText: {
-        fontSize: FontSize.sm,
-    },
+    filterBadgeText: { color: '#FFF', fontSize: 10, fontFamily: FontFamily.bold },
     listContent: {
-        paddingHorizontal: Spacing.xl,
-        paddingTop: Spacing.md,
-        paddingBottom: Spacing.huge,
+        paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: 100,
     },
-    listContentEmpty: {
-        flexGrow: 1,
-    },
+    listContentEmpty: { flexGrow: 1 },
     notifItem: {
-        flexDirection: 'row',
-        padding: Spacing.md,
-        borderRadius: BorderRadius.lg,
-        borderWidth: 1,
-        gap: Spacing.md,
-    },
-    notifIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
+        flexDirection: 'row', padding: Spacing.md,
+        borderRadius: BorderRadius.lg, borderWidth: 1, gap: Spacing.md,
         alignItems: 'center',
     },
-    notifContent: {
-        flex: 1,
-    },
-    notifTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.sm,
-        marginBottom: 2,
-    },
-    notifTitle: {
-        fontSize: FontSize.md,
-        flex: 1,
-    },
-    unreadDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    notifBody: {
-        fontSize: FontSize.sm,
-        lineHeight: 20,
-        marginBottom: 4,
-    },
-    notifTime: {
-        fontSize: FontSize.xs,
-    },
+    notifIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+    notifContent: { flex: 1 },
+    notifTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 2 },
+    notifTitle: { fontSize: FontSize.md, flex: 1 },
+    unreadDot: { width: 8, height: 8, borderRadius: 4 },
+    notifBody: { fontSize: FontSize.sm, lineHeight: 20, marginBottom: 4 },
+    notifTime: { fontSize: FontSize.xs },
     emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: Spacing.huge * 2,
-        gap: Spacing.md,
+        flex: 1, justifyContent: 'center', alignItems: 'center',
+        paddingVertical: Spacing.huge * 2, gap: Spacing.md,
         paddingHorizontal: Spacing.xl,
     },
-    emptyText: {
-        fontSize: FontSize.md,
-        textAlign: 'center',
-    },
-    emptySubtext: {
-        fontSize: FontSize.sm,
-        textAlign: 'center',
-        lineHeight: 20,
-    },
+    emptyText: { fontSize: FontSize.md, textAlign: 'center' },
+    emptySubtext: { fontSize: FontSize.sm, textAlign: 'center', lineHeight: 20 },
 });

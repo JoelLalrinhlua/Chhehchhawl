@@ -3,7 +3,7 @@
  *
  * Exports:
  *  • `isValidEmail`          — Loose RFC-5322-style email check.
- *  • `checkPasswordStrength` — Returns { score, feedback } (0–4 scale).
+ *  • `checkPasswordStrength` — Returns { valid, message } (relaxed: 8+ chars + 1 number).
  *  • `isValidDateOfBirth`    — Age 13–120 range check.
  *  • `normalizePhone`        — Strips whitespace/dashes, ensures +91 prefix.
  */
@@ -14,12 +14,9 @@ export function isValidEmail(email: string): boolean {
 }
 
 /**
- * Password strength rules:
+ * Password strength rules (relaxed):
  *  - >= 8 characters
- *  - at least 1 uppercase letter
- *  - at least 1 lowercase letter
- *  - at least 1 digit
- *  - at least 1 special character
+ *  - at least 1 number
  */
 export interface PasswordCheck {
   valid: boolean;
@@ -30,17 +27,8 @@ export function checkPasswordStrength(password: string): PasswordCheck {
   if (password.length < 8) {
     return { valid: false, message: 'Password must be at least 8 characters' };
   }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, message: 'Password needs at least one uppercase letter' };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, message: 'Password needs at least one lowercase letter' };
-  }
   if (!/\d/.test(password)) {
-    return { valid: false, message: 'Password needs at least one digit' };
-  }
-  if (!/[^A-Za-z0-9]/.test(password)) {
-    return { valid: false, message: 'Password needs at least one special character' };
+    return { valid: false, message: 'Password needs at least one number' };
   }
   return { valid: true, message: '' };
 }

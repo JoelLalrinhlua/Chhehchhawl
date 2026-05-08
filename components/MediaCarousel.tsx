@@ -95,7 +95,10 @@ export function MediaCarousel({ mediaUrls }: MediaCarouselProps) {
                                     style={[styles.image, { backgroundColor: colors.card }]}
                                     contentFit="cover"
                                     recyclingKey={url}
-                                    transition={200}
+                                    priority="high"
+                                    cachePolicy="memory-disk"
+                                    placeholder={{ blurhash: '|rF?hV%2WCj[ayj[a|j[az_NaeWBj@ayfRayfQfQM{M|azj[azf6fQfQfQIpWXofj[ayj[j[fQayWCoeoeaya]' }}
+                                    transition={{ duration: 250, effect: 'cross-dissolve' }}
                                 />
                             )}
                         </View>
