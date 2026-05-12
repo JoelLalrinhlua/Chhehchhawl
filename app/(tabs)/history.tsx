@@ -20,8 +20,10 @@ import { useFinishTaskMutation, useMarkPaymentSentMutation } from '@/hooks/use-m
 import { useMyAppliedTasksQuery, type AppliedTask } from '@/hooks/use-task-queries';
 import { useToast } from '@/contexts/ToastContext';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Animated,
     Dimensions,
     FlatList,
     Pressable,
@@ -29,11 +31,6 @@ import {
     Text,
     View,
 } from 'react-native';
-import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming,
-} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -43,13 +40,16 @@ export default function MyTasksScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
     const { showToast } = useToast();
+    const router = useRouter();
     const { getMyPosts, getMyTasks, refreshTasks, deleteTask } = useTasks();
     const { applicantCounts, refreshApplicantCounts, myApplications } = useApplications();
     const [activeTab, setActiveTab] = useState(0);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
     const [selectedPostTask, setSelectedPostTask] = useState<Task | null>(null);
     const [applicantSheetTask, setApplicantSheetTask] = useState<Task | null>(null);
-    const tabIndicatorX = useSharedValue(0);
+    const pagerRef = useRef<Animated.LegacyRef<any>>(null);
+    // scrollX drives the indicator and tab labels in real-time via native thread
+    const scrollX = useRef(new Animated.Value(0)).current;
 
     const finishTaskMutation = useFinishTaskMutation(user?.id);
     const markPaymentSentMutation = useMarkPaymentSentMutation(user?.id);
@@ -120,16 +120,45 @@ export default function MyTasksScreen() {
         refreshApplicantCounts(myPosts.filter(t => t.id !== taskId).map(t => t.id));
     }, [deleteTask, myPosts, refreshApplicantCounts]);
 
-    const indicatorStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: tabIndicatorX.value }],
-    }));
+    // Handle poster accepting a tasker — navigate directly to chat room
+    const handleAcceptSuccess = useCallback((roomId: string) => {
+        setApplicantSheetTask(null);
+        setSelectedPostTask(null);
+        refreshTasks();
+        // Navigate to chat tab with the specific room
+        router.push({ pathname: '/(tabs)/chat', params: { openRoomId: roomId } });
+    }, [router, refreshTasks]);
+
+    // Indicator translateX interpolated directly from scroll position (native thread, 60fps)
+    const indicatorTranslateX = scrollX.interpolate({
+        inputRange: [0, SCREEN_WIDTH],
+        outputRange: [0, (SCREEN_WIDTH - Spacing.xl * 2) / 2],
+        extrapolate: 'clamp',
+    });
+
+    // Tab 0 opacity: full when at x=0, fades as we scroll right
+    const tab0Opacity = scrollX.interpolate({
+        inputRange: [0, SCREEN_WIDTH],
+        outputRange: [1, 0.45],
+        extrapolate: 'clamp',
+    });
+    // Tab 1 opacity: fades in as we scroll right
+    const tab1Opacity = scrollX.interpolate({
+        inputRange: [0, SCREEN_WIDTH],
+        outputRange: [0.45, 1],
+        extrapolate: 'clamp',
+    });
 
     const switchTab = (index: number) => {
         setActiveTab(index);
-        tabIndicatorX.value = withTiming(
-            (index * (SCREEN_WIDTH - Spacing.xl * 2)) / 2,
-            { duration: 300 }
-        );
+        (pagerRef.current as any)?.scrollTo({ x: index * SCREEN_WIDTH, animated: true });
+    };
+
+    const handleSwipe = (x: number) => {
+        const index = Math.round(x / SCREEN_WIDTH);
+        if (index !== activeTab) {
+            setActiveTab(index);
+        }
     };
 
     const getStatusConfig = useCallback(
@@ -164,7 +193,7 @@ export default function MyTasksScreen() {
         const statusCfg = getStatusConfig(item.status);
 
         return (
-            <Animated.View>
+            <View>
                 <Pressable
                     style={[
                         styles.postCard,
@@ -283,7 +312,7 @@ export default function MyTasksScreen() {
                         </Text>
                     </View>
                 </Pressable>
-            </Animated.View>
+            </View>
         );
     };
 
@@ -386,22 +415,20 @@ export default function MyTasksScreen() {
         );
     };
 
-    const renderEmpty = () => (
+    const renderEmptyTasks = () => (
         <View style={styles.emptyContainer}>
-            <Ionicons
-                name={activeTab === 1 ? 'create-outline' : 'briefcase-outline'}
-                size={48}
-                color={colors.textMuted}
-            />
-            <Text
-                style={[
-                    styles.emptyText,
-                    { color: colors.textMuted, fontFamily: FontFamily.regular },
-                ]}
-            >
-                {activeTab === 1
-                    ? "You haven't posted any tasks yet"
-                    : 'No tasks or applications yet'}
+            <Ionicons name="briefcase-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                No tasks or applications yet
+            </Text>
+        </View>
+    );
+
+    const renderEmptyPosts = () => (
+        <View style={styles.emptyContainer}>
+            <Ionicons name="create-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                You haven&apos;t posted any tasks yet
             </Text>
         </View>
     );
@@ -430,23 +457,18 @@ export default function MyTasksScreen() {
                         style={styles.tabButton}
                         onPress={() => switchTab(index)}
                     >
-                        <Text
+                        <Animated.Text
                             style={[
                                 styles.tabText,
                                 {
-                                    color:
-                                        activeTab === index
-                                            ? colors.accent
-                                            : colors.textMuted,
-                                    fontFamily:
-                                        activeTab === index
-                                            ? FontFamily.bold
-                                            : FontFamily.regular,
+                                    color: colors.accent,
+                                    fontFamily: activeTab === index ? FontFamily.bold : FontFamily.regular,
+                                    opacity: index === 0 ? tab0Opacity : tab1Opacity,
                                 },
                             ]}
                         >
                             {tab}
-                        </Text>
+                        </Animated.Text>
                     </Pressable>
                 ))}
                 <Animated.View
@@ -455,42 +477,58 @@ export default function MyTasksScreen() {
                         {
                             backgroundColor: colors.accent,
                             width: (SCREEN_WIDTH - Spacing.xl * 2) / 2,
+                            transform: [{ translateX: indicatorTranslateX }],
                         },
-                        indicatorStyle,
                     ]}
                 />
             </View>
 
             {/* Content */}
-            {activeTab === 1 ? (
-                // My Posts — structured list
-                <FlatList
-                    key="my-posts-list"
-                    data={myPosts}
-                    renderItem={renderMyPostItem}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.listContent}
-                    showsVerticalScrollIndicator={false}
-                    ListEmptyComponent={renderEmpty}
-                    ItemSeparatorComponent={() => (
-                        <View style={{ height: Spacing.sm }} />
-                    )}
-                />
-            ) : (
-                // My Tasks — unified structured list (assigned + applied)
+            {/* Swipeable content pager — Animated.ScrollView for native-thread scroll tracking */}
+            <Animated.ScrollView
+                ref={pagerRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={1}
+                onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+                    { useNativeDriver: true }
+                )}
+                onMomentumScrollEnd={(e) => handleSwipe(e.nativeEvent.contentOffset.x)}
+                style={{ flex: 1 }}
+                decelerationRate="fast"
+            >
+                {/* Page 0 — My Tasks */}
                 <FlatList
                     key="my-tasks-list"
                     data={unifiedMyTasks}
                     renderItem={renderMyTaskItem}
                     keyExtractor={(item) => item.id + item._kind}
-                    contentContainerStyle={styles.listContent}
+                    contentContainerStyle={[styles.listContent, { width: SCREEN_WIDTH }]}
+                    style={{ width: SCREEN_WIDTH }}
                     showsVerticalScrollIndicator={false}
-                    ListEmptyComponent={renderEmpty}
+                    ListEmptyComponent={renderEmptyTasks}
                     ItemSeparatorComponent={() => (
                         <View style={{ height: Spacing.sm }} />
                     )}
                 />
-            )}
+
+                {/* Page 1 — My Posts */}
+                <FlatList
+                    key="my-posts-list"
+                    data={myPosts}
+                    renderItem={renderMyPostItem}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={[styles.listContent, { width: SCREEN_WIDTH }]}
+                    style={{ width: SCREEN_WIDTH }}
+                    showsVerticalScrollIndicator={false}
+                    ListEmptyComponent={renderEmptyPosts}
+                    ItemSeparatorComponent={() => (
+                        <View style={{ height: Spacing.sm }} />
+                    )}
+                />
+            </Animated.ScrollView>
 
             {/* Task Detail Sheet (for My Posts) */}
             {selectedPostTask && (
@@ -526,6 +564,7 @@ export default function MyTasksScreen() {
                         refreshTasks();
                         refreshApplicantCounts(myPosts.map((t) => t.id));
                     }}
+                    onAcceptSuccess={handleAcceptSuccess}
                 />
             )}
         </SafeAreaView>

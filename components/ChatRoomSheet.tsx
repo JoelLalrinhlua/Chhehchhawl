@@ -338,6 +338,7 @@ export function ChatRoomSheet({
         const trimmed = messageText.trim();
         if (!trimmed || !user?.id || isChatLocked) return;
         setMessageText('');
+        Keyboard.dismiss();
         try {
             await sendMutation.mutateAsync({ roomId, message: trimmed });
         } catch {

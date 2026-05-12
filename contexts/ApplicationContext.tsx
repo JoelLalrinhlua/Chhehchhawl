@@ -70,7 +70,7 @@ interface ApplicationContextType {
     acceptApplicant: (
         taskId: string,
         applicantId: string
-    ) => Promise<{ success: boolean; error?: string }>;
+    ) => Promise<{ success: boolean; error?: string; room_id?: string }>;
 
     /** Reject an applicant permanently (poster action) */
     rejectApplicant: (
@@ -178,8 +178,8 @@ export function ApplicationProvider({ children }: { children: React.ReactNode })
             if (!user) return { success: false, error: 'Not authenticated' };
 
             try {
-                await acceptMutation.mutateAsync({ taskId, applicantId });
-                return { success: true };
+                const result = await acceptMutation.mutateAsync({ taskId, applicantId });
+                return { success: true, room_id: result.room_id };
             } catch (err: any) {
                 return { success: false, error: err.message || 'Failed to accept' };
             }

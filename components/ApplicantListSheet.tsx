@@ -17,6 +17,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useToast } from '@/contexts/ToastContext';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -49,6 +50,8 @@ interface ApplicantListSheetProps {
     visible: boolean;
     onClose: () => void;
     onStatusChange?: () => void;
+    /** Called after a tasker is successfully accepted, with the chat room ID */
+    onAcceptSuccess?: (roomId: string) => void;
 }
 
 export function ApplicantListSheet({
@@ -59,9 +62,11 @@ export function ApplicantListSheet({
     visible,
     onClose,
     onStatusChange,
+    onAcceptSuccess,
 }: ApplicantListSheetProps) {
     const { colors } = useTheme();
     const { showToast } = useToast();
+    const router = useRouter();
     const { getTaskApplicants, acceptApplicant, rejectApplicant } =
         useApplications();
     const [applicants, setApplicants] = useState<TaskApplicant[]>([]);
@@ -115,7 +120,7 @@ export function ApplicantListSheet({
         setAlertConfig({
             visible: true,
             title: 'Accept Applicant',
-            message: `Accept ${name} for "${taskTitle}"?\n\nThis will assign the task and stop accepting new applications.`,
+            message: `Accept ${name} for "${taskTitle}"?\n\nThis will assign the task and open a chat with them.`,
             variant: 'confirm',
             buttons: [
                 { text: 'Cancel', style: 'cancel' },
@@ -129,8 +134,21 @@ export function ApplicantListSheet({
                         if (result.success) {
                             showToast(`${name} accepted as tasker!`, 'success');
                             onStatusChange?.();
-                            fetchApplicants();
                             setSelectedApplicant(null);
+                            // Navigate to chat immediately if we have a room_id
+                            if (result.room_id) {
+                                onClose();
+                                // Small delay to allow sheet close animation
+                                setTimeout(() => {
+                                    if (onAcceptSuccess) {
+                                        onAcceptSuccess(result.room_id!);
+                                    } else {
+                                        router.push('/(tabs)/chat');
+                                    }
+                                }, 300);
+                            } else {
+                                fetchApplicants();
+                            }
                         } else {
                             showToast(result.error ?? 'Failed to accept', 'error');
                         }
@@ -327,148 +345,167 @@ export function ApplicantListSheet({
     if (!visible) return null;
 
     return (
-        <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-            <Pressable style={styles.backdrop} onPress={onClose} />
-            <Animated.View
-                entering={FadeIn.duration(200)}
-                exiting={FadeOut.duration(150)}
-            >
-              <GestureDetector gesture={panGesture}>
+        <Modal
+            visible={visible}
+            transparent
+            animationType="none"
+            statusBarTranslucent
+            onRequestClose={onClose}
+        >
+            <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+                <Pressable style={styles.backdrop} onPress={onClose} />
                 <Animated.View
-                    style={[
-                        styles.sheet,
-                        { backgroundColor: colors.surface },
-                        sheetStyle,
-                    ]}
+                    entering={FadeIn.duration(200)}
+                    exiting={FadeOut.duration(150)}
                 >
-                    <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
+                  <GestureDetector gesture={panGesture}>
+                    <Animated.View
+                        style={[
+                            styles.sheet,
+                            { backgroundColor: colors.surface },
+                            sheetStyle,
+                        ]}
+                    >
+                        <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
 
-                    {/* Header */}
-                    <View style={styles.sheetHeader}>
-                        <Text style={[styles.sheetTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
-                            Applicants
-                        </Text>
-                        <Text
-                            style={[styles.sheetSubtitle, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}
-                            numberOfLines={1}
-                        >
-                            {taskTitle}
-                        </Text>
-                        {taskStatus === 'assigned' && (
-                            <View style={[styles.assignedBanner, { backgroundColor: colors.statusGreen + '15' }]}>
-                                <Ionicons name="checkmark-circle" size={16} color={colors.statusGreen} />
-                                <Text style={[styles.assignedBannerText, { color: colors.statusGreen, fontFamily: FontFamily.medium }]}>
-                                    Task has been assigned
+                        {/* Header */}
+                        <View style={styles.sheetHeader}>
+                            <Text style={[styles.sheetTitle, { color: colors.text, fontFamily: FontFamily.bold }]}>
+                                Applicants
+                            </Text>
+                            <Text
+                                style={[styles.sheetSubtitle, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}
+                                numberOfLines={1}
+                            >
+                                {taskTitle}
+                            </Text>
+                            {taskStatus === 'assigned' && (
+                                <View style={[styles.assignedBanner, { backgroundColor: colors.statusGreen + '15' }]}>
+                                    <Ionicons name="checkmark-circle" size={16} color={colors.statusGreen} />
+                                    <Text style={[styles.assignedBannerText, { color: colors.statusGreen, fontFamily: FontFamily.medium }]}>
+                                        Task has been assigned
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* List */}
+                        {loading ? (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color={colors.accent} />
+                            </View>
+                        ) : applicants.length === 0 ? (
+                            <View style={styles.emptyContainer}>
+                                <Ionicons name="people-outline" size={48} color={colors.textMuted} />
+                                <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                    No applicants yet
                                 </Text>
                             </View>
+                        ) : (
+                            <FlatList
+                                data={applicants}
+                                renderItem={renderApplicant}
+                                keyExtractor={(item) => item.application_id}
+                                contentContainerStyle={styles.listContent}
+                                showsVerticalScrollIndicator={false}
+                                ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+                            />
                         )}
-                    </View>
-
-                    {/* List */}
-                    {loading ? (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color={colors.accent} />
-                        </View>
-                    ) : applicants.length === 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <Ionicons name="people-outline" size={48} color={colors.textMuted} />
-                            <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
-                                No applicants yet
-                            </Text>
-                        </View>
-                    ) : (
-                        <FlatList
-                            data={applicants}
-                            renderItem={renderApplicant}
-                            keyExtractor={(item) => item.application_id}
-                            contentContainerStyle={styles.listContent}
-                            showsVerticalScrollIndicator={false}
-                            ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
-                        />
-                    )}
+                    </Animated.View>
+                  </GestureDetector>
                 </Animated.View>
-              </GestureDetector>
-            </Animated.View>
 
-            {/* Applicant details modal */}
-            <Modal
-                visible={!!selectedApplicant}
-                transparent
-                animationType="fade"
-                statusBarTranslucent
-                onRequestClose={() => setSelectedApplicant(null)}
-            >
-                <View style={[styles.detailOverlay, { backgroundColor: colors.overlay }]}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedApplicant(null)} />
-                    <View style={[styles.detailCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={styles.detailHeader}>
-                            <Text style={[styles.detailTitle, { color: colors.text, fontFamily: FontFamily.bold }]} numberOfLines={1}>
-                                {selectedApplicant?.full_name ?? selectedApplicant?.username ?? 'Applicant'}
-                            </Text>
-                            <Pressable onPress={() => setSelectedApplicant(null)} hitSlop={10}>
-                                <Ionicons name="close" size={22} color={colors.textMuted} />
-                            </Pressable>
-                        </View>
+                {/* Applicant details modal */}
+                <Modal
+                    visible={!!selectedApplicant}
+                    transparent
+                    animationType="fade"
+                    statusBarTranslucent
+                    onRequestClose={() => setSelectedApplicant(null)}
+                >
+                    <View style={[styles.detailOverlay, { backgroundColor: colors.overlay }]}>
+                        <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedApplicant(null)} />
+                        <View style={[styles.detailCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                            <View style={styles.detailHeader}>
+                                <Text style={[styles.detailTitle, { color: colors.text, fontFamily: FontFamily.bold }]} numberOfLines={1}>
+                                    {selectedApplicant?.full_name ?? selectedApplicant?.username ?? 'Applicant'}
+                                </Text>
+                                <Pressable onPress={() => setSelectedApplicant(null)} hitSlop={10}>
+                                    <Ionicons name="close" size={22} color={colors.textMuted} />
+                                </Pressable>
+                            </View>
 
-                        <View style={styles.detailSection}>
-                            <View style={styles.detailMetaRow}>
-                                <Ionicons name="star" size={14} color={colors.statusOrange} />
-                                <Text style={[styles.detailMetaText, { color: colors.textSecondary, fontFamily: FontFamily.medium }]}>
-                                    {selectedApplicant ? getRatingLabel(selectedApplicant) : '—'}
+                            <View style={styles.detailSection}>
+                                <View style={styles.detailMetaRow}>
+                                    <Ionicons name="star" size={14} color={colors.statusOrange} />
+                                    <Text style={[styles.detailMetaText, { color: colors.textSecondary, fontFamily: FontFamily.medium }]}>
+                                        {selectedApplicant ? getRatingLabel(selectedApplicant) : '—'}
+                                    </Text>
+                                </View>
+                                <Text style={[styles.detailLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                                    Application message
+                                </Text>
+                                <Text style={[styles.detailMessage, { color: colors.text, fontFamily: FontFamily.regular }]}>
+                                    {selectedApplicant?.message?.trim()
+                                        ? selectedApplicant.message.trim()
+                                        : 'No message provided.'}
                                 </Text>
                             </View>
-                            <Text style={[styles.detailLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
-                                Application message
-                            </Text>
-                            <Text style={[styles.detailMessage, { color: colors.text, fontFamily: FontFamily.regular }]}>
-                                {selectedApplicant?.message?.trim()
-                                    ? selectedApplicant.message.trim()
-                                    : 'No message provided.'}
-                            </Text>
-                        </View>
 
-                        <View style={styles.detailSection}>
-                            <Text style={[styles.detailLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
-                                Reviews
-                            </Text>
-                            <View style={[styles.reviewsPlaceholder, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.textMuted} />
-                                <Text style={[styles.reviewsPlaceholderText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
-                                    No reviews available yet
+                            <View style={styles.detailSection}>
+                                <Text style={[styles.detailLabel, { color: colors.textMuted, fontFamily: FontFamily.medium }]}>
+                                    Reviews
                                 </Text>
+                                <View style={[styles.reviewsPlaceholder, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                    <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.textMuted} />
+                                    <Text style={[styles.reviewsPlaceholderText, { color: colors.textMuted, fontFamily: FontFamily.regular }]}>
+                                        No reviews available yet
+                                    </Text>
+                                </View>
                             </View>
-                        </View>
 
-                        <View style={[styles.detailActions, { borderTopColor: colors.border }]}>
-                            <Pressable
-                                style={[styles.detailBtn, { backgroundColor: colors.statusRed + '15', borderColor: colors.statusRed + '30' }]}
-                                onPress={() => selectedApplicant && handleReject(selectedApplicant)}
-                                disabled={!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending'}
-                            >
-                                <Text style={[styles.detailBtnText, { color: colors.statusRed, fontFamily: FontFamily.bold }]}>Deny</Text>
-                            </Pressable>
-                            <Pressable
-                                style={[styles.detailBtn, { backgroundColor: colors.statusGreen, borderColor: colors.statusGreen }]}
-                                onPress={() => selectedApplicant && handleAccept(selectedApplicant)}
-                                disabled={!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending'}
-                            >
-                                <Text style={[styles.detailBtnText, { color: '#FFF', fontFamily: FontFamily.bold }]}>Accept</Text>
-                            </Pressable>
+                            <View style={[styles.detailActions, { borderTopColor: colors.border }]}>
+                                <Pressable
+                                    style={[styles.detailBtn, { backgroundColor: colors.statusRed + '15', borderColor: colors.statusRed + '30' }]}
+                                    onPress={() => selectedApplicant && handleReject(selectedApplicant)}
+                                    disabled={!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending'}
+                                >
+                                    <Text style={[styles.detailBtnText, { color: colors.statusRed, fontFamily: FontFamily.bold }]}>Deny</Text>
+                                </Pressable>
+                                <Pressable
+                                    style={[
+                                        styles.detailBtn,
+                                        {
+                                            backgroundColor: colors.statusGreen,
+                                            borderColor: colors.statusGreen,
+                                            opacity: (!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending') ? 0.5 : 1,
+                                        },
+                                    ]}
+                                    onPress={() => selectedApplicant && handleAccept(selectedApplicant)}
+                                    disabled={!selectedApplicant || actionLoading === selectedApplicant.applicant_id || taskStatus !== 'open' || selectedApplicant.status !== 'pending'}
+                                >
+                                    {actionLoading === selectedApplicant?.applicant_id ? (
+                                        <ActivityIndicator size="small" color="#FFF" />
+                                    ) : (
+                                        <Text style={[styles.detailBtnText, { color: '#FFF', fontFamily: FontFamily.bold }]}>Accept</Text>
+                                    )}
+                                </Pressable>
+                            </View>
                         </View>
                     </View>
-                </View>
-            </Modal>
+                </Modal>
 
-            {/* Themed confirmation dialog */}
-            <CustomAlert
-                visible={alertConfig.visible}
-                title={alertConfig.title}
-                message={alertConfig.message}
-                variant={alertConfig.variant}
-                buttons={alertConfig.buttons}
-                onDismiss={closeAlert}
-            />
-        </View>
+                {/* Themed confirmation dialog */}
+                <CustomAlert
+                    visible={alertConfig.visible}
+                    title={alertConfig.title}
+                    message={alertConfig.message}
+                    variant={alertConfig.variant}
+                    buttons={alertConfig.buttons}
+                    onDismiss={closeAlert}
+                />
+            </View>
+        </Modal>
     );
 }
 

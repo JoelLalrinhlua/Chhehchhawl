@@ -23,6 +23,7 @@ import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
@@ -43,6 +44,7 @@ export default function ChatScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
     const { showToast } = useToast();
+    const { openRoomId } = useLocalSearchParams<{ openRoomId?: string }>();
     const [search, setSearch] = useState('');
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
     const [completedExpanded, setCompletedExpanded] = useState(false);
@@ -60,6 +62,22 @@ export default function ChatScreen() {
         () => (selectedRoomId ? rooms.find((r) => r.room_id === selectedRoomId) ?? null : null),
         [selectedRoomId, rooms]
     );
+
+    // Auto-open a room when navigated from the accept-tasker flow
+    useEffect(() => {
+        if (!openRoomId) return;
+        const room = rooms.find((r) => r.room_id === openRoomId);
+        if (room) {
+            setSelectedRoomId(openRoomId);
+        } else {
+            // Room not yet in cache — refetch and open after
+            refetch().then(() => {
+                setSelectedRoomId(openRoomId);
+            });
+        }
+    // Only run when openRoomId changes (navigation event)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openRoomId]);
 
     // Animate chevron on expand/collapse
     useEffect(() => {

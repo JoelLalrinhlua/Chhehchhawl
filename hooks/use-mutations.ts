@@ -340,7 +340,7 @@ async function acceptApplicantFn({ taskId, applicantId, posterId }: AcceptApplic
     });
 
     if (error) throw new Error(error.message);
-    const result = data as { success: boolean; error?: string };
+    const result = data as { success: boolean; error?: string; room_id?: string };
     if (!result.success) throw new Error(result.error ?? 'Failed to accept');
     return result;
 }
@@ -349,7 +349,7 @@ async function acceptApplicantFn({ taskId, applicantId, posterId }: AcceptApplic
  * Mutation hook for accepting an applicant.
  * Invalidates task feed, applicant list, and counts.
  */
-/** Mutation hook for the poster to accept an applicant. Invalidates tasks + applications. */
+/** Mutation hook for the poster to accept an applicant. Invalidates tasks + applications + chat. */
 export function useAcceptApplicantMutation(posterId: string | undefined) {
     return useMutation({
         mutationFn: ({ taskId, applicantId }: { taskId: string; applicantId: string }) =>
@@ -364,6 +364,10 @@ export function useAcceptApplicantMutation(posterId: string | undefined) {
             });
             queryClient.invalidateQueries({
                 queryKey: ['applications', 'mine'],
+            });
+            // Invalidate chat rooms so the new room is visible immediately
+            queryClient.invalidateQueries({
+                queryKey: ['chat', 'rooms'],
             });
         },
     });
