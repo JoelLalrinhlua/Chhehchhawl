@@ -10,6 +10,7 @@ import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { CustomAlert } from '@/components/CustomAlert';
+import { NotificationSheet } from '@/components/NotificationSheet';
 import { useToast } from '@/contexts/ToastContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -48,6 +49,7 @@ export default function ProfileScreen() {
 
     const [logoutAlertVisible, setLogoutAlertVisible] = useState(false);
     const [supportModalVisible, setSupportModalVisible] = useState(false);
+    const [notifVisible, setNotifVisible] = useState(false);
 
     const handleLogout = () => {
         setLogoutAlertVisible(true);
@@ -171,7 +173,11 @@ export default function ProfileScreen() {
                         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                     <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
-                    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        activeOpacity={0.7}
+                        onPress={() => setNotifVisible(true)}
+                    >
                         <View style={styles.settingLeft}>
                             <Ionicons name="notifications-outline" size={22} color={colors.textSecondary} />
                             <Text style={[styles.settingText, { color: colors.text }]}>Notifications</Text>
@@ -320,6 +326,11 @@ export default function ProfileScreen() {
                     </Animated.View>
                 </View>
             </Modal>
+            {/* Notification Center */}
+            <NotificationSheet
+                visible={notifVisible}
+                onClose={() => setNotifVisible(false)}
+            />
         </ScrollView>
     );
 }

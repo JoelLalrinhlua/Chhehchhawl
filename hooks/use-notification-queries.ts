@@ -4,7 +4,7 @@
 
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 export type NotificationType =
     | 'application_accepted'
@@ -28,12 +28,38 @@ export interface Notification {
     reference_type: 'chat' | 'task' | null;
 }
 
+/** Number of notifications fetched per page. */
+export const NOTIFICATIONS_PAGE_SIZE = 50;
+
+async function fetchNotificationsPage(userId: string, page: number): Promise<Notification[]> {
+    const from = page * NOTIFICATIONS_PAGE_SIZE;
+    const to = from + NOTIFICATIONS_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+        .rpc('get_my_notifications', { p_user_id: userId })
+        .range(from, to);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as Notification[];
+}
+
 async function fetchNotifications(userId: string): Promise<Notification[]> {
     const { data, error } = await supabase.rpc('get_my_notifications', {
         p_user_id: userId,
     });
     if (error) throw new Error(error.message);
     return (data ?? []) as Notification[];
+}
+
+/** Infinite-scroll hook for notifications (50 per page). */
+export function useInfiniteNotificationsQuery(userId: string | undefined, enabled: boolean = true) {
+    return useInfiniteQuery({
+        queryKey: queryKeys.notifications.list(userId ?? ''),
+        queryFn: ({ pageParam }) => fetchNotificationsPage(userId!, pageParam as number),
+        initialPageParam: 0,
+        getNextPageParam: (lastPage, allPages) =>
+            lastPage.length < NOTIFICATIONS_PAGE_SIZE ? undefined : allPages.length,
+        enabled: !!userId && enabled,
+        staleTime: 10 * 1000,
+    });
 }
 
 export function useNotificationsQuery(userId: string | undefined, enabled: boolean = true) {

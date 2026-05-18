@@ -187,7 +187,20 @@ export function ChatRoomSheet({
     const composerTranslateY = useRef(new Animated.Value(0)).current;
     const [composerHeight, setComposerHeight] = useState(0);
 
-    const { data: messages = [] } = useChatMessagesQuery(roomId, visible);
+    const {
+        data: messagesData,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+    } = useChatMessagesQuery(roomId, visible);
+
+    // Flatten pages — each page is DESC (newest first).
+    // The `inverted` FlatList already shows newest at the bottom, so no reversal needed.
+    const messages = useMemo(
+        () => (messagesData?.pages ?? []).flatMap((p) => p),
+        [messagesData],
+    );
+
     const { data: liveSession } = useLiveLocationSessionQuery(roomId, visible);
     const sendMutation = useSendMessageMutation(user?.id);
     const markSeenMutation = useMarkMessagesSeenMutation();
@@ -715,7 +728,9 @@ export function ChatRoomSheet({
         });
     }, [taskId, confirmPaymentMutation, user?.id, onClose]);
 
-    const invertedMessages = [...messages].reverse();
+    // messages is already newest-first (DESC from DB). The `inverted` FlatList shows
+    // index 0 at the bottom of the screen, so newest messages appear at the bottom ✓
+    const invertedMessages = messages;
 
     // ── Keyboard handling (prevents jumpy layout in Modal) ──
     useEffect(() => {
@@ -1183,6 +1198,19 @@ export function ChatRoomSheet({
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
                     maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+                    // When user scrolls up to the oldest visible message, load the next (older) page
+                    onEndReached={() => { if (hasNextPage && !isFetchingNextPage) fetchNextPage(); }}
+                    onEndReachedThreshold={0.3}
+                    // The footer appears at the TOP of the inverted list (oldest end)
+                    ListFooterComponent={
+                        isFetchingNextPage
+                            ? <ActivityIndicator size="small" color={colors.accent} style={{ paddingVertical: Spacing.lg }} />
+                            : hasNextPage
+                            ? null
+                            : invertedMessages.length > 0
+                            ? <View style={styles.noMoreMessages}><Text style={[styles.noMoreText, { color: colors.textMuted }]}>— Start of conversation —</Text></View>
+                            : null
+                    }
                 />
 
                 {/* Attachment menu overlay */}
@@ -1640,6 +1668,17 @@ const styles = StyleSheet.create({
         width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center',
     },
     attachMenuText: { fontSize: FontSize.xs },
+
+    // Pagination footer (appears at top of inverted list = oldest end)
+    noMoreMessages: {
+        alignItems: 'center' as const,
+        paddingVertical: Spacing.lg,
+        paddingBottom: Spacing.xl,
+    },
+    noMoreText: {
+        fontSize: FontSize.xs,
+        fontFamily: FontFamily.regular,
+    },
 });
 
 // ── TaskerInfoModal ─────────────────────────────────────────────

@@ -100,8 +100,9 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
         const channel = supabase
             .channel('public:tasks')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-                // Invalidate query to trigger refetch
+                // Invalidate both the bounded feed (TaskContext) and the paginated feed (tasks screen)
                 queryClient.invalidateQueries({ queryKey: queryKeys.tasks.feed() });
+                queryClient.invalidateQueries({ queryKey: queryKeys.tasks.infiniteFeed() });
             })
             .subscribe();
 

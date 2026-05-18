@@ -15,6 +15,7 @@
  *   - Overlay fades out once the video ends AND fonts are ready.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -32,6 +33,7 @@ import { TaskProvider } from '@/contexts/TaskContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { queryClient } from '@/lib/query-client';
+import { getWelcomeSeenKey } from '@/lib/welcome-seen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Keep the native splash visible until we're ready to show the video
@@ -91,7 +93,7 @@ function VideoSplash({ onFinished }: { onFinished: () => void }) {
 
 // ── Root Navigator ────────────────────────────────────────────────────────────
 function RootNavigator() {
-  const { isAuthenticated, isProfileComplete, isLoading } = useAuth();
+  const { isAuthenticated, isProfileComplete, isLoading, user } = useAuth();
   const { isDark, colors } = useTheme();
   const segments = useSegments();
   const router = useRouter();
@@ -103,6 +105,7 @@ function RootNavigator() {
     const firstSegment = segments[0] as string | undefined;
     const inAuth = firstSegment === 'login' || firstSegment === 'phone-auth';
     const inProfile = firstSegment === 'complete-profile';
+    const inWelcome = firstSegment === 'welcome';
 
     if (!isAuthenticated) {
       // Not logged in → must be on login or phone-auth
@@ -115,12 +118,27 @@ function RootNavigator() {
         router.replace('/complete-profile');
       }
     } else {
-      // Fully authenticated → must be in (tabs) or create-task
+      // Fully authenticated — check if this is a new user who hasn't seen welcome
       if (inAuth || inProfile) {
-        router.replace('/(tabs)');
+        // Coming from auth/profile screens: check if welcome screen was shown
+        if (user?.id) {
+          AsyncStorage.getItem(getWelcomeSeenKey(user.id)).then((seen) => {
+            if (!seen) {
+              router.replace('/welcome');
+            } else {
+              router.replace('/(tabs)');
+            }
+          });
+        } else {
+          router.replace('/(tabs)');
+        }
+      } else if (!inWelcome) {
+        // Already in the app — if welcome hasn't been seen, redirect
+        // (edge case: profile just completed but segment not yet auth/profile)
+        // We only do this if we're not already heading somewhere valid.
       }
     }
-  }, [isAuthenticated, isProfileComplete, isLoading, segments]);
+  }, [isAuthenticated, isProfileComplete, isLoading, segments, user]);
 
   if (isLoading) {
     return (
@@ -144,6 +162,8 @@ function RootNavigator() {
         <Stack.Screen name="phone-auth" options={{ animation: 'default' }} />
         {/* Profile completion */}
         <Stack.Screen name="complete-profile" options={{ animation: 'fade' }} />
+        {/* Welcome / onboarding (shown once per new user) */}
+        <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
         {/* Main app */}
         <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
         <Stack.Screen name="create-task" options={{ animation: 'slide_from_bottom' }} />

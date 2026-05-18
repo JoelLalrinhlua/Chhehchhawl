@@ -878,7 +878,7 @@ export default function CreateTaskScreen() {
 
                     <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
 
-                    <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                    <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_HEIGHT * 0.48 }}>
                         {/* Summary Rows */}
                         <SummaryRow label="Title" value={title || '—'} colors={colors} />
                         <SummaryRow label="Description" value={description || '—'} colors={colors} />

@@ -3,10 +3,11 @@
  *
  * Renders all available tasks in a FlatList (grid or list mode).
  * Features:
- *  • Filter by category, distance, urgency, and status (FilterSheet)
+ *  • Filter by category, distance, urgency, status, and location (state + districts)
  *  • Sort by time, budget, distance, or urgency (SortSheet)
  *  • Toggle between grid / list layout
- *  • Distance calculation from the user’s current location via `expo-location`
+ *  • Distance calculation from the user's current location via `expo-location`
+ *  • Auto-detects user's Indian state via GPS for location-aware filtering
  *  • Pull-to-refresh and perf-tuned FlatList props
  */
 
@@ -14,19 +15,23 @@ import { DEFAULT_FILTERS, FilterSheet, getActiveFilterCount, type FilterState } 
 import { DEFAULT_SORT, SortSheet, type SortConfig } from '@/components/SortSheet';
 import { TaskCard } from '@/components/TaskCard';
 import { TaskDetailSheet } from '@/components/TaskDetailSheet';
+import { INDIAN_STATES } from '@/constants/indian-locations';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '@/constants/theme';
-import { useTasks, type Task } from '@/contexts/TaskContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { type Task } from '@/contexts/TaskContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApplicantCountsQuery } from '@/hooks/use-application-queries';
-import { MAX_APPLICANTS } from '@/hooks/use-task-queries';
+import { MAX_APPLICANTS, useInfiniteTaskFeedQuery } from '@/hooks/use-task-queries';
 import { haversine } from '@/utils/distance';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     FlatList,
     Pressable,
+    RefreshControl,
     StyleSheet,
     Text,
     View,
@@ -42,12 +47,63 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const URGENCY_ORDER = { urgent: 3, mid: 2, low: 1 };
 
+/**
+ * Attempts to match a geocoded `region` string (returned by expo-location's
+ * reverseGeocodeAsync) to a canonical state name in INDIAN_STATES.
+ *
+ * Strategy: normalise both strings (lower-case, strip punctuation/spaces) and
+ * check for substring containment in either direction, then fall back to
+ * checking individual words.
+ */
+function matchRegionToState(region: string | null | undefined): string {
+    if (!region) return '';
+
+    const normalise = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const normRegion = normalise(region);
+
+    // 1. Exact or substring match
+    for (const s of INDIAN_STATES) {
+        const normState = normalise(s.name);
+        if (normRegion === normState || normRegion.includes(normState) || normState.includes(normRegion)) {
+            return s.name;
+        }
+    }
+
+    // 2. Word-level match (e.g. "Mizoram Pradesh" → "Mizoram")
+    const regionWords = region.toLowerCase().split(/\W+/).filter(Boolean);
+    for (const s of INDIAN_STATES) {
+        const stateWords = s.name.toLowerCase().split(/\W+/).filter(Boolean);
+        if (stateWords.some((w) => regionWords.includes(w))) {
+            return s.name;
+        }
+    }
+
+    return '';
+}
+
+
+
 export default function HomeScreen() {
     const { colors } = useTheme();
-    const { tasks } = useTasks();
+    const { isAuthenticated } = useAuth();
     const router = useRouter();
 
-    // Fetch applicant counts to hide full tasks
+    // ── Paginated task feed ──
+    const {
+        data: feedData,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isRefetching,
+        refetch,
+    } = useInfiniteTaskFeedQuery(isAuthenticated);
+
+    // Flatten all pages into a single array for filtering/sorting
+    const tasks = useMemo(() => (feedData?.pages ?? []).flat(), [feedData]);
+
+    // Fetch applicant counts to hide tasks that have hit the cap
     const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
     const { data: applicantCounts = {} } = useApplicantCountsQuery(taskIds);
 
@@ -60,10 +116,13 @@ export default function HomeScreen() {
     const [sortVisible, setSortVisible] = useState(false);
     const [locationText, setLocationText] = useState('Fetching location...');
 
+    /** Detected Indian state name from GPS (empty string = unknown) */
+    const [detectedState, setDetectedState] = useState('');
+
     // User coordinates for distance calculations
     const userCoords = useRef<{ latitude: number; longitude: number } | null>(null);
 
-    // ── Location ──
+    // ── Location detection ──
     useEffect(() => {
         (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
@@ -81,8 +140,17 @@ export default function HomeScreen() {
                 };
                 const [geo] = await Location.reverseGeocodeAsync(userCoords.current);
                 if (geo) {
+                    // Build display text
                     const parts = [geo.name, geo.district, geo.city].filter(Boolean);
                     setLocationText(parts.join(', ') || 'Current Location');
+
+                    // Detect state — expo-location puts state in `geo.region`
+                    // Only store as a hint for the FilterSheet; do NOT auto-apply to
+                    // filters so that all tasks are visible by default.
+                    const matched = matchRegionToState(geo.region);
+                    if (matched) {
+                        setDetectedState(matched);
+                    }
                 }
             } catch {
                 setLocationText('Location unavailable');
@@ -124,26 +192,84 @@ export default function HomeScreen() {
             (t) => (applicantCounts[t.id] ?? 0) < MAX_APPLICANTS
         );
 
-        // Filter: categories
+        // ── Filter: state ──
+        // Matching strategy (in order of priority):
+        //   1. task.locality contains a district name from the selected state
+        //   2. task.locality contains the state name itself
+        //   3. task.location (free-text) contains the state name or any district
+        //   4. Task has NO location data at all → include it (can't determine location)
+        //
+        // Tasks are only excluded when they have location data that clearly belongs
+        // to a DIFFERENT state — never exclude tasks with missing location data.
+        if (filters.state) {
+            const stateData = INDIAN_STATES.find((s) => s.name === filters.state);
+            if (stateData) {
+                const stateNorm = filters.state.toLowerCase();
+                const districtNorms = stateData.districts.map((d) => d.toLowerCase());
+
+                result = result.filter((t) => {
+                    const localityNorm = t.locality?.toLowerCase().trim() ?? '';
+                    const locationNorm = t.location?.toLowerCase().trim() ?? '';
+
+                    // No location info → include (can't determine, don't hide)
+                    if (!localityNorm && !locationNorm) return true;
+
+                    // Check locality against all district names of the state
+                    if (localityNorm && districtNorms.some((d) => localityNorm.includes(d) || d.includes(localityNorm))) return true;
+
+                    // Check locality against the state name itself
+                    if (localityNorm && (localityNorm.includes(stateNorm) || stateNorm.includes(localityNorm))) return true;
+
+                    // Check free-text location field against state name
+                    if (locationNorm && locationNorm.includes(stateNorm)) return true;
+
+                    // Check free-text location field against any district name
+                    if (locationNorm && districtNorms.some((d) => locationNorm.includes(d) || d.includes(locationNorm))) return true;
+
+                    return false;
+                });
+            }
+        }
+
+        // ── Filter: districts ──
+        // Only narrows further when a state is selected AND at least one district chosen.
+        // Tasks with no location data still pass through.
+        if (filters.state && filters.districts.length > 0) {
+            const selectedDistrictNorms = filters.districts.map((d) => d.toLowerCase());
+            result = result.filter((t) => {
+                const localityNorm = t.locality?.toLowerCase().trim() ?? '';
+                const locationNorm = t.location?.toLowerCase().trim() ?? '';
+
+                // No location info → include
+                if (!localityNorm && !locationNorm) return true;
+
+                if (localityNorm && selectedDistrictNorms.some((d) => localityNorm.includes(d) || d.includes(localityNorm))) return true;
+                if (locationNorm && selectedDistrictNorms.some((d) => locationNorm.includes(d) || d.includes(locationNorm))) return true;
+
+                return false;
+            });
+        }
+
+        // ── Filter: categories ──
         if (filters.categories.length > 0) {
             result = result.filter((t) =>
                 t.categories.some((c) => filters.categories.includes(c))
             );
         }
 
-        // Filter: urgencies
+        // ── Filter: urgencies ──
         if (filters.urgencies.length > 0) {
             result = result.filter(
                 (t) => t.urgency && filters.urgencies.includes(t.urgency)
             );
         }
 
-        // Filter: statuses
+        // ── Filter: statuses ──
         if (filters.statuses.length > 0) {
             result = result.filter((t) => filters.statuses.includes(t.status));
         }
 
-        // Filter: distance range
+        // ── Filter: distance range ──
         if (filters.distanceRange !== 'any' && userCoords.current) {
             result = result.filter((t) => {
                 const d = getDistanceKm(t);
@@ -158,7 +284,7 @@ export default function HomeScreen() {
             });
         }
 
-        // Sort
+        // ── Sort ──
         result.sort((a, b) => {
             const dir = sortConfig.direction === 'asc' ? 1 : -1;
             switch (sortConfig.field) {
@@ -190,6 +316,14 @@ export default function HomeScreen() {
     };
 
     const activeFilterCount = getActiveFilterCount(filters);
+
+    // ── Location display text with detected state hint ──
+    const locationDisplayText = useMemo(() => {
+        if (detectedState && locationText !== 'Fetching location...' && locationText !== 'Location unavailable') {
+            return locationText;
+        }
+        return locationText;
+    }, [locationText, detectedState]);
 
     // ── Render cards ──
     const renderGridCard = useCallback(
@@ -230,8 +364,16 @@ export default function HomeScreen() {
                         style={[styles.locationText, { color: colors.textSecondary, fontFamily: FontFamily.regular }]}
                         numberOfLines={1}
                     >
-                        {locationText}
+                        {locationDisplayText}
                     </Text>
+                    {/* Show detected state chip if a state is being filtered */}
+                    {filters.state ? (
+                        <View style={[styles.stateChip, { backgroundColor: colors.accentLight }]}>
+                            <Text style={[styles.stateChipText, { color: colors.accent, fontFamily: FontFamily.semiBold }]}>
+                                {filters.state}
+                            </Text>
+                        </View>
+                    ) : null}
                 </View>
 
                 {/* Action buttons */}
@@ -277,7 +419,7 @@ export default function HomeScreen() {
                 </View>
             </View>
 
-            {/* Task Feed */}
+                    {/* Task Feed */}
             {viewMode === 'grid' ? (
                 <FlatList
                     key="grid"
@@ -292,6 +434,20 @@ export default function HomeScreen() {
                     maxToRenderPerBatch={6}
                     windowSize={5}
                     removeClippedSubviews
+                    onEndReached={() => { if (hasNextPage && !isFetchingNextPage) fetchNextPage(); }}
+                    onEndReachedThreshold={0.4}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={isRefetching && !isFetchingNextPage}
+                            onRefresh={refetch}
+                            tintColor={colors.accent}
+                        />
+                    }
+                    ListFooterComponent={
+                        isFetchingNextPage
+                            ? <ActivityIndicator size="small" color={colors.accent} style={styles.feedFooter} />
+                            : null
+                    }
                 />
             ) : (
                 <FlatList
@@ -305,6 +461,20 @@ export default function HomeScreen() {
                     maxToRenderPerBatch={4}
                     windowSize={5}
                     removeClippedSubviews
+                    onEndReached={() => { if (hasNextPage && !isFetchingNextPage) fetchNextPage(); }}
+                    onEndReachedThreshold={0.4}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={isRefetching && !isFetchingNextPage}
+                            onRefresh={refetch}
+                            tintColor={colors.accent}
+                        />
+                    }
+                    ListFooterComponent={
+                        isFetchingNextPage
+                            ? <ActivityIndicator size="small" color={colors.accent} style={styles.feedFooter} />
+                            : null
+                    }
                 />
             )}
 
@@ -314,6 +484,7 @@ export default function HomeScreen() {
                 onClose={() => setFilterVisible(false)}
                 filters={filters}
                 onApply={setFilters}
+                detectedState={detectedState}
             />
             <SortSheet
                 visible={sortVisible}
@@ -375,6 +546,14 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: FontSize.sm,
     },
+    stateChip: {
+        paddingHorizontal: Spacing.sm,
+        paddingVertical: 2,
+        borderRadius: BorderRadius.full,
+    },
+    stateChipText: {
+        fontSize: FontSize.xs,
+    },
     actionButtons: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -425,5 +604,9 @@ const styles = StyleSheet.create({
     list: {
         paddingBottom: Spacing.huge,
         paddingTop: 2,
+    },
+    feedFooter: {
+        paddingVertical: Spacing.lg,
+        alignItems: 'center' as const,
     },
 });

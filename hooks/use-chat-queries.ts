@@ -8,7 +8,7 @@
 
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 /** Shape of a chat room as returned by the `get_my_chat_rooms` RPC. */
 export interface ChatRoom {
@@ -110,16 +110,31 @@ export function useChatRoomsQuery(userId: string | undefined, enabled: boolean =
     });
 }
 
-/** Fetch messages for a specific chat room. */
-async function fetchChatMessages(roomId: string): Promise<ChatMessage[]> {
+/** Number of messages fetched per page. */
+export const CHAT_PAGE_SIZE = 50;
+
+/**
+ * Fetch one page of messages for a chat room.
+ * Pages are in DESCENDING order (newest first) so that:
+ *  • Page 0 → most recent 50 messages
+ *  • Page 1 → the 50 messages before those, etc.
+ * The inverted FlatList in ChatRoomSheet displays them correctly without reversal.
+ */
+async function fetchChatMessagesPage(
+    roomId: string,
+    pageParam: number,
+): Promise<ChatMessage[]> {
+    const from = pageParam * CHAT_PAGE_SIZE;
+    const to = from + CHAT_PAGE_SIZE - 1;
+
     const { data, error } = await supabase
         .from('messages')
         .select('id, room_id, sender_id, message, message_type, metadata, created_at, seen')
         .eq('room_id', roomId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
     if (error) throw new Error(error.message);
-    // Default message_type to 'text' for old rows
     return ((data ?? []) as any[]).map((m) => ({
         ...m,
         message_type: m.message_type || 'text',
@@ -127,14 +142,22 @@ async function fetchChatMessages(roomId: string): Promise<ChatMessage[]> {
     })) as ChatMessage[];
 }
 
-/** Hook to fetch messages for a specific chat room. */
+/**
+ * Infinite-scroll hook for chat messages.
+ * Returns pages in DESC order (newest page first).
+ * Compatible with the `inverted` FlatList in ChatRoomSheet:
+ *  • Page 0 items (newest) render at the bottom of the screen.
+ *  • onEndReached on the inverted list fires when user scrolls UP → loads older page.
+ */
 export function useChatMessagesQuery(roomId: string | undefined, enabled: boolean = true) {
-    return useQuery({
+    return useInfiniteQuery({
         queryKey: queryKeys.chat.messages(roomId ?? ''),
-        queryFn: () => fetchChatMessages(roomId!),
+        queryFn: ({ pageParam }) => fetchChatMessagesPage(roomId!, pageParam as number),
+        initialPageParam: 0,
+        getNextPageParam: (lastPage, allPages) =>
+            lastPage.length < CHAT_PAGE_SIZE ? undefined : allPages.length,
         enabled: !!roomId && enabled,
         staleTime: 5 * 1000,
-        refetchInterval: 30 * 1000, // Poll every 30s as fallback
     });
 }
 

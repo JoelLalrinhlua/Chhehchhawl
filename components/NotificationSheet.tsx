@@ -18,7 +18,7 @@ import {
     useMarkNotificationReadMutation,
 } from '@/hooks/use-mutations';
 import {
-    useNotificationsQuery,
+    useInfiniteNotificationsQuery,
     type Notification,
     type NotificationType,
 } from '@/hooks/use-notification-queries';
@@ -28,6 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    ActivityIndicator,
     FlatList,
     Modal,
     Pressable,
@@ -80,7 +81,19 @@ export function NotificationSheet({ visible, onClose, onOpenChat }: Notification
     const insets = useSafeAreaInsets();
     const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
 
-    const { data: notifications = [], isLoading } = useNotificationsQuery(user?.id, visible);
+    const {
+        data: notificationsData,
+        isLoading,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+    } = useInfiniteNotificationsQuery(user?.id, visible);
+
+    // Flatten all loaded pages into a single list
+    const notifications = useMemo(
+        () => (notificationsData?.pages ?? []).flatMap((p) => p),
+        [notificationsData],
+    );
     const markReadMutation = useMarkNotificationReadMutation(user?.id);
     const markAllReadMutation = useMarkAllNotificationsReadMutation(user?.id);
 
@@ -248,6 +261,14 @@ export function NotificationSheet({ visible, onClose, onOpenChat }: Notification
                     </ScrollView>
                 </View>
 
+                {/* Push notifications coming-soon banner */}
+                <View style={[styles.comingSoonBanner, { backgroundColor: colors.accent + '12', borderColor: colors.accent + '30' }]}>
+                    <Ionicons name="construct-outline" size={14} color={colors.accent} />
+                    <Text style={[styles.comingSoonText, { color: colors.accent, fontFamily: FontFamily.medium }]}>
+                        Push notification pop-ups are still being built — coming in a future update!
+                    </Text>
+                </View>
+
                 {/* List */}
                 <FlatList
                     data={filtered}
@@ -260,6 +281,27 @@ export function NotificationSheet({ visible, onClose, onOpenChat }: Notification
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={renderEmpty}
                     ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+                    onEndReached={() => { if (hasNextPage && !isFetchingNextPage) fetchNextPage(); }}
+                    onEndReachedThreshold={0.3}
+                    ListFooterComponent={
+                        isFetchingNextPage ? (
+                            <ActivityIndicator
+                                size="small"
+                                color={colors.accent}
+                                style={{ paddingVertical: Spacing.lg }}
+                            />
+                        ) : hasNextPage ? (
+                            <TouchableOpacity
+                                style={[styles.loadMoreBtn, { borderColor: colors.border }]}
+                                onPress={() => fetchNextPage()}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={[styles.loadMoreText, { color: colors.textMuted }]}>
+                                    Load older notifications
+                                </Text>
+                            </TouchableOpacity>
+                        ) : null
+                    }
                 />
             </View>
         </Modal>
@@ -327,4 +369,23 @@ const styles = StyleSheet.create({
     },
     emptyText: { fontSize: FontSize.md, textAlign: 'center' },
     emptySubtext: { fontSize: FontSize.sm, textAlign: 'center', lineHeight: 20 },
+    loadMoreBtn: {
+        alignItems: 'center' as const,
+        paddingVertical: Spacing.md,
+        marginTop: Spacing.sm,
+        borderTopWidth: 1,
+    },
+    loadMoreText: { fontSize: FontSize.sm, fontFamily: FontFamily.medium },
+    comingSoonBanner: {
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
+        gap: Spacing.sm,
+        marginHorizontal: Spacing.lg,
+        marginBottom: Spacing.sm,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm,
+        borderRadius: BorderRadius.md,
+        borderWidth: 1,
+    },
+    comingSoonText: { fontSize: FontSize.xs, flex: 1, lineHeight: 16 },
 });

@@ -20,6 +20,8 @@ export const queryKeys = {
         myPosts: (userId: string) => ['tasks', 'my-posts', userId] as const,
         myTasks: (userId: string) => ['tasks', 'my-tasks', userId] as const,
         detail: (taskId: string) => ['tasks', 'detail', taskId] as const,
+        userStats: (userId: string) => ['tasks', 'user-stats', userId] as const,
+        infiniteFeed: () => ['tasks', 'feed', 'infinite'] as const,
     },
 
     // ── Applications ──
